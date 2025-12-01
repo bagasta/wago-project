@@ -1,0 +1,1 @@
+ALTER TABLE sessions ALTER COLUMN phone_number TYPE VARCHAR(100);
