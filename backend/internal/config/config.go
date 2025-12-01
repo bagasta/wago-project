@@ -3,15 +3,18 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	AppPort      string
-	DatabaseURL  string
-	JWTSecret    string
-	WhatsappData string
+	AppPort        string
+	DatabaseURL    string
+	JWTSecret      string
+	WhatsappData   string
+	AllowedOrigins []string
+	LogLevel       string
 }
 
 func LoadConfig() *Config {
@@ -21,10 +24,12 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		AppPort:      getEnv("APP_PORT", "8080"),
-		DatabaseURL:  getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/wago?sslmode=disable"),
-		JWTSecret:    getEnv("JWT_SECRET", "change-me-secret"),
-		WhatsappData: getEnv("WHATSAPP_DATA_DIR", "whatsapp-sessions"),
+		AppPort:        getEnv("APP_PORT", "8080"),
+		DatabaseURL:    getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/wago?sslmode=disable"),
+		JWTSecret:      getEnv("JWT_SECRET", "change-me-secret"),
+		WhatsappData:   getEnv("WHATSAPP_DATA_DIR", "whatsapp-sessions"),
+		AllowedOrigins: parseCSV(getEnv("ALLOWED_ORIGINS", "*")),
+		LogLevel:       strings.ToUpper(getEnv("LOG_LEVEL", "INFO")),
 	}
 }
 
@@ -33,4 +38,12 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }

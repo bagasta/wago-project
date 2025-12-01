@@ -31,7 +31,7 @@ type ClientManager struct {
 
 func NewClientManager(cfg *config.Config, sessionRepo *repository.SessionRepository, wsHub *websocket.Hub, webhookService *webhook.WebhookService) *ClientManager {
 	// Initialize whatsmeow SQL store
-	dbLog := waLog.Stdout("Database", "DEBUG", true)
+	dbLog := waLog.Stdout("Database", cfg.LogLevel, true)
 	container, err := sqlstore.New(context.Background(), "postgres", cfg.DatabaseURL, dbLog)
 	if err != nil {
 		panic(err)
@@ -206,7 +206,7 @@ func (cm *ClientManager) Connect(sessionID string) error {
 		deviceStore = cm.Container.NewDevice()
 	}
 
-	clientLog := waLog.Stdout("Client", "DEBUG", true)
+	clientLog := waLog.Stdout("Client", cm.Config.LogLevel, true)
 	client := whatsmeow.NewClient(deviceStore, clientLog)
 
 	// Add event handler
@@ -257,14 +257,36 @@ func (cm *ClientManager) Connect(sessionID string) error {
 	return nil
 }
 
-func (cm *ClientManager) Disconnect(sessionID string) {
+func (cm *ClientManager) disconnect(sessionID string, updateStatus bool) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
 	if client, ok := cm.Clients[sessionID]; ok {
 		client.Disconnect()
 		delete(cm.Clients, sessionID)
-		cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, "", nil)
+		if updateStatus {
+			cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, "", nil)
+		}
+	}
+}
+
+// Disconnect is used for user-triggered session stop; it updates DB status.
+func (cm *ClientManager) Disconnect(sessionID string) {
+	cm.disconnect(sessionID, true)
+}
+
+// Shutdown disconnects all active clients gracefully.
+func (cm *ClientManager) Shutdown() {
+	cm.mu.RLock()
+	ids := make([]string, 0, len(cm.Clients))
+	for id := range cm.Clients {
+		ids = append(ids, id)
+	}
+	cm.mu.RUnlock()
+
+	for _, id := range ids {
+		// Do not overwrite status/phone_number during shutdown so auto-reconnect still works
+		cm.disconnect(id, false)
 	}
 }
 

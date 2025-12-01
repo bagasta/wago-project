@@ -15,6 +15,12 @@ func RunMigrations(migrationsDir string) error {
 		return err
 	}
 
+	// Ensure schema_migrations table exists to prevent re-running migrations.
+	_, err = DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`)
+	if err != nil {
+		return fmt.Errorf("failed to ensure schema_migrations table: %w", err)
+	}
+
 	var upMigrations []string
 	for _, file := range files {
 		if strings.HasSuffix(file.Name(), ".up.sql") {
@@ -25,24 +31,39 @@ func RunMigrations(migrationsDir string) error {
 	sort.Strings(upMigrations)
 
 	for _, migrationFile := range upMigrations {
+		var alreadyApplied bool
+		err = DB.QueryRow(`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)`, migrationFile).Scan(&alreadyApplied)
+		if err != nil {
+			return fmt.Errorf("failed to check migration %s: %w", migrationFile, err)
+		}
+		if alreadyApplied {
+			log.Printf("Skipping migration (already applied): %s", migrationFile)
+			continue
+		}
+
 		log.Printf("Running migration: %s", migrationFile)
 		content, err := os.ReadFile(filepath.Join(migrationsDir, migrationFile))
 		if err != nil {
 			return err
 		}
 
-		_, err = DB.Exec(string(content))
+		tx, err := DB.Begin()
 		if err != nil {
-			// Check if error is because table already exists, if so, ignore (very basic migration logic)
-			// Ideally we should use a proper migration tool or a schema_migrations table.
-			// For now, we'll just log and continue/fail.
-			// Since we are using "IF NOT EXISTS" or just creating, this might fail if tables exist.
-			// The SQL files I wrote do NOT have "IF NOT EXISTS".
-			// So this simple runner is dangerous if run multiple times.
-			// I should update the SQL files to use IF NOT EXISTS or implement a proper check.
-			// But for this task, I'll update the SQL files to be idempotent or just let it fail if exists.
-			// Actually, let's just return the error.
+			return fmt.Errorf("failed to begin tx for migration %s: %w", migrationFile, err)
+		}
+
+		if _, err = tx.Exec(string(content)); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("migration %s failed: %w", migrationFile, err)
+		}
+
+		if _, err = tx.Exec(`INSERT INTO schema_migrations (filename) VALUES ($1)`, migrationFile); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to record migration %s: %w", migrationFile, err)
+		}
+
+		if err = tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit migration %s: %w", migrationFile, err)
 		}
 	}
 

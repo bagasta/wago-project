@@ -7,11 +7,13 @@ import (
 	"wago-backend/internal/config"
 	"wago-backend/internal/utils"
 
-	"github.com/golang-jwt/jwt/v5"
+	"sync"
+	"time"
 )
 
 type Middleware struct {
-	Config *config.Config
+	Config       *config.Config
+	rateLimiters sync.Map
 }
 
 func NewMiddleware(cfg *config.Config) *Middleware {
@@ -32,40 +34,27 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := parts[1]
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return []byte(m.Config.JWTSecret), nil
-		})
-
-		if err != nil || !token.Valid {
-			utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid token")
+		userID, err := utils.ParseUserIDFromToken(parts[1], m.Config.JWTSecret)
+		if err != nil {
+			utils.ErrorResponse(w, http.StatusUnauthorized, err.Error())
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid token claims")
-			return
-		}
-
-		userID, ok := claims["user_id"].(string)
-		if !ok {
-			utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid user ID in token")
-			return
-		}
-
-		// Add user_id to context
 		ctx := context.WithValue(r.Context(), "user_id", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (m *Middleware) CORS(next http.Handler) http.Handler {
+	allowed := m.Config.AllowedOrigins
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if originAllowed(origin, allowed) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else if len(allowed) == 1 && allowed[0] == "*" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -73,6 +62,52 @@ func (m *Middleware) CORS(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func originAllowed(origin string, allowed []string) bool {
+	if origin == "" {
+		return true // non-browser clients
+	}
+	for _, o := range allowed {
+		if o == "*" || strings.EqualFold(o, origin) {
+			return true
+		}
+	}
+	return false
+}
+
+// simple token bucket per IP
+type limiter struct {
+	tokens     int
+	lastRefill time.Time
+}
+
+func (m *Middleware) RateLimitMiddleware(next http.Handler) http.Handler {
+	const (
+		maxTokens    = 60
+		refillPeriod = time.Minute
+	)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := strings.Split(r.RemoteAddr, ":")[0]
+
+		val, _ := m.rateLimiters.LoadOrStore(ip, &limiter{tokens: maxTokens, lastRefill: time.Now()})
+		lim := val.(*limiter)
+
+		now := time.Now()
+		if since := now.Sub(lim.lastRefill); since > refillPeriod {
+			lim.tokens = maxTokens
+			lim.lastRefill = now
+		}
+
+		if lim.tokens <= 0 {
+			utils.ErrorResponse(w, http.StatusTooManyRequests, "Rate limit exceeded")
+			return
+		}
+		lim.tokens--
 
 		next.ServeHTTP(w, r)
 	})

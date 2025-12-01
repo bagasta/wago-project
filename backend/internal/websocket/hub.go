@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,9 +14,6 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
 }
 
 type Client struct {
@@ -124,7 +122,24 @@ func (c *Client) WritePump() {
 	c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 }
 
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, sessionID string) {
+func originAllowed(origin string, allowed []string) bool {
+	if origin == "" {
+		return true
+	}
+	for _, o := range allowed {
+		if o == "*" || strings.EqualFold(o, origin) {
+			return true
+		}
+	}
+	return false
+}
+
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, sessionID string, allowedOrigins []string) {
+	upgrader.CheckOrigin = func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		return originAllowed(origin, allowedOrigins)
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)

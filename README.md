@@ -24,6 +24,7 @@ A full-stack gateway for managing multiple WhatsApp Web sessions with webhook de
 ```bash
 cp backend/.env.example backend/.env
 # update DATABASE_URL, APP_PORT, JWT_SECRET as needed
+# optionally set ALLOWED_ORIGINS (comma-separated) and LOG_LEVEL (INFO/DEBUG)
 ```
 
 2) Backend:
@@ -46,6 +47,7 @@ npm run dev
 - Group mention logic: bot replies only when mentioned; checks both user JID and LID variants.
 - Migrations run automatically at boot from `backend/migrations/`.
 - Tests: `cd backend && GOCACHE=$(mktemp -d) go test ./...`
+- Rate limiting: simple per-IP bucket (60 req/min) applied globally.
 
 ## API & Auth
 - Base path: `/api/v1`

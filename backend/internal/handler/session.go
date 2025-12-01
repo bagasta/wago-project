@@ -3,6 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
+	"wago-backend/internal/config"
 	"wago-backend/internal/service"
 	"wago-backend/internal/utils"
 	"wago-backend/internal/websocket"
@@ -13,12 +16,14 @@ import (
 type SessionHandler struct {
 	SessionService *service.SessionService
 	WSHub          *websocket.Hub
+	Config         *config.Config
 }
 
-func NewSessionHandler(sessionService *service.SessionService, wsHub *websocket.Hub) *SessionHandler {
+func NewSessionHandler(sessionService *service.SessionService, wsHub *websocket.Hub, cfg *config.Config) *SessionHandler {
 	return &SessionHandler{
 		SessionService: sessionService,
 		WSHub:          wsHub,
+		Config:         cfg,
 	}
 }
 
@@ -31,6 +36,16 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.SessionName) == "" || len(req.SessionName) > 100 {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid session name")
+		return
+	}
+
+	if _, err := url.ParseRequestURI(req.WebhookURL); err != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid webhook URL")
 		return
 	}
 
@@ -58,6 +73,11 @@ func (h *SessionHandler) GetSessions(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	if strings.TrimSpace(id) == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid session id")
+		return
+	}
 
 	err := h.SessionService.StartSession(id)
 	if err != nil {
@@ -92,11 +112,22 @@ func (h *SessionHandler) WebSocketHandler(w http.ResponseWriter, r *http.Request
 	// Validate token from query param since WS doesn't support headers easily in browser JS
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		// Try header? No, browser WS API doesn't allow custom headers.
-		// So we must rely on query param or cookie.
-		// For now, let's assume query param.
-		// TODO: Validate token here.
+		utils.ErrorResponse(w, http.StatusUnauthorized, "Missing token")
+		return
 	}
 
-	websocket.ServeWs(h.WSHub, w, r, id)
+	userID, err := utils.ParseUserIDFromToken(token, h.Config.JWTSecret)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	// Ensure session belongs to user
+	session, err := h.SessionService.GetSession(id)
+	if err != nil || session == nil || session.UserID != userID {
+		utils.ErrorResponse(w, http.StatusForbidden, "Session not accessible")
+		return
+	}
+
+	websocket.ServeWs(h.WSHub, w, r, id, h.Config.AllowedOrigins)
 }
