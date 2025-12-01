@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"wago-backend/internal/model"
 	"wago-backend/internal/webhook"
 
@@ -12,6 +13,80 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
+
+// collectContextInfos gathers context info from common message types so we can check mentions in captions/text.
+func collectContextInfos(msg *waProto.Message) []*waProto.ContextInfo {
+	var contexts []*waProto.ContextInfo
+	if msg.GetExtendedTextMessage() != nil {
+		contexts = append(contexts, msg.GetExtendedTextMessage().GetContextInfo())
+	}
+	if msg.GetImageMessage() != nil {
+		contexts = append(contexts, msg.GetImageMessage().GetContextInfo())
+	}
+	if msg.GetVideoMessage() != nil {
+		contexts = append(contexts, msg.GetVideoMessage().GetContextInfo())
+	}
+	if msg.GetDocumentMessage() != nil {
+		contexts = append(contexts, msg.GetDocumentMessage().GetContextInfo())
+	}
+	if msg.GetAudioMessage() != nil {
+		contexts = append(contexts, msg.GetAudioMessage().GetContextInfo())
+	}
+	if msg.GetStickerMessage() != nil {
+		contexts = append(contexts, msg.GetStickerMessage().GetContextInfo())
+	}
+	if msg.GetLocationMessage() != nil {
+		contexts = append(contexts, msg.GetLocationMessage().GetContextInfo())
+	}
+	if msg.GetLiveLocationMessage() != nil {
+		contexts = append(contexts, msg.GetLiveLocationMessage().GetContextInfo())
+	}
+	return contexts
+}
+
+// isMentioned checks both explicit mention lists and raw text for any of our JIDs (regular or LID).
+func isMentioned(msg *waProto.Message, rawText string, targets []types.JID) bool {
+	var searchTokens []string
+	for _, jid := range targets {
+		if jid.User == "" && jid.Server == "" {
+			continue
+		}
+		// Base user
+		searchTokens = append(searchTokens, jid.User)
+		// Full JIDs
+		searchTokens = append(searchTokens, jid.String())
+		searchTokens = append(searchTokens, jid.ToNonAD().String())
+
+		// Also include LID server form to catch mentions that use @lid even if our main JID is s.whatsapp.net
+		if jid.Server != types.HiddenUserServer && jid.User != "" {
+			lidJID := types.NewJID(jid.User, types.HiddenUserServer)
+			searchTokens = append(searchTokens, lidJID.User, lidJID.String())
+		}
+	}
+
+	// Check explicit mention lists in context infos.
+	for _, ctx := range collectContextInfos(msg) {
+		if ctx == nil {
+			continue
+		}
+		for _, mentioned := range ctx.GetMentionedJID() {
+			for _, t := range searchTokens {
+				if strings.Contains(mentioned, t) {
+					return true
+				}
+			}
+		}
+	}
+
+	// Fallback: check plain text for @<number>
+	text := strings.ToLower(rawText)
+	for _, t := range searchTokens {
+		if strings.Contains(text, "@"+strings.ToLower(t)) {
+			return true
+		}
+	}
+	return false
+}
 
 func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 	switch v := evt.(type) {
@@ -25,7 +100,16 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			DeviceModel: v.BusinessName, // Sometimes business name is here
 		}
 
-		cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, phoneNumber, deviceInfo)
+		fmt.Printf("PairSuccess: Saving session %s with JID %s\n", sessionID, phoneNumber)
+
+		err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, phoneNumber, deviceInfo)
+		if err != nil {
+			fmt.Printf("Failed to update session status: %v\n", err)
+		} else {
+			if updated, fetchErr := cm.SessionRepo.GetSessionByID(sessionID); fetchErr == nil && updated != nil {
+				fmt.Printf("PairSuccess: session %s saved with phone_number=%s status=%s\n", sessionID, updated.PhoneNumber, updated.Status)
+			}
+		}
 
 		// Notify WS
 		cm.WSHub.SendToSession(sessionID, "status_update", map[string]interface{}{
@@ -35,14 +119,35 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		})
 
 	case *events.Connected:
-		// Update DB status if needed
-		// cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, ...)
-		// But we might not have phone number here if it's a reconnect.
-		// Usually PairSuccess is for NEW login. Connected is for every connection.
+		// Ensure DB reflects connected status (covers reconnects where PairSuccess is not fired)
+		var phoneNumber string
+		// Try to get the JID from the in-memory client store
+		client := cm.GetClient(sessionID)
+		if client != nil && client.Store != nil && client.Store.ID != nil {
+			phoneNumber = client.Store.ID.String()
+		}
+
+		// Fallback to existing DB value if we couldn't read from client
+		if phoneNumber == "" {
+			session, err := cm.SessionRepo.GetSessionByID(sessionID)
+			if err == nil && session != nil {
+				phoneNumber = session.PhoneNumber
+			}
+		}
+
+		// Persist connected status + phone (if available)
+		if err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, phoneNumber, nil); err != nil {
+			fmt.Printf("Failed to update session status on reconnect: %v\n", err)
+		} else {
+			if updated, fetchErr := cm.SessionRepo.GetSessionByID(sessionID); fetchErr == nil && updated != nil {
+				fmt.Printf("Connected: session %s saved with phone_number=%s status=%s\n", sessionID, updated.PhoneNumber, updated.Status)
+			}
+		}
 
 		// Notify WS
 		cm.WSHub.SendToSession(sessionID, "status_update", map[string]interface{}{
-			"status": "connected",
+			"status":       "connected",
+			"phone_number": phoneNumber,
 		})
 
 	case *events.LoggedOut:
@@ -94,6 +199,24 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		// Filter out empty messages (e.g. status updates, protocol messages)
 		if payload.Message == "" {
 			return
+		}
+
+		// Group Message Handling: Only respond if mentioned
+		if v.Info.IsGroup {
+			client := cm.GetClient(sessionID)
+			if client != nil && client.Store.ID != nil {
+				targets := []types.JID{*client.Store.ID}
+				if client.Store.LID.User != "" || client.Store.LID.Server != "" {
+					targets = append(targets, client.Store.LID)
+				}
+
+				if !isMentioned(v.Message, payload.Message, targets) {
+					fmt.Printf("Ignoring group message from %s: not mentioned. My JIDs: %v\n", v.Info.Sender.User, targets)
+					return
+				}
+			} else {
+				fmt.Println("[GroupMsg] Client or Store ID is nil")
+			}
 		}
 
 		// Send Webhook and Handle Response

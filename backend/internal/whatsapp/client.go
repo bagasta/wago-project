@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"wago-backend/internal/config"
 	"wago-backend/internal/model"
@@ -44,6 +45,38 @@ func NewClientManager(cfg *config.Config, sessionRepo *repository.SessionReposit
 		WebhookService: webhookService,
 		Container:      container,
 	}
+}
+
+// normalizeSessionJID tries to turn whatever is stored in the DB into a valid JID that includes server (and device if present).
+// types.ParseJID doesn't error on plain numbers, so we additionally ensure the user part is present.
+func normalizeSessionJID(raw string) (types.JID, error) {
+	cleaned := strings.TrimSpace(raw)
+	if cleaned == "" {
+		return types.JID{}, fmt.Errorf("empty JID string")
+	}
+
+	jid, err := types.ParseJID(cleaned)
+	if err == nil && jid.User != "" {
+		// Ensure default server is set if somehow missing.
+		if jid.Server == "" {
+			jid.Server = types.DefaultUserServer
+		}
+		return jid, nil
+	}
+
+	// Fallback for bare phone numbers or other invalid formats: assume default WA server.
+	if !strings.Contains(cleaned, "@") {
+		cleaned = cleaned + "@" + types.DefaultUserServer
+	}
+
+	jid, err = types.ParseJID(cleaned)
+	if err != nil {
+		return types.JID{}, err
+	}
+	if jid.User == "" {
+		return types.JID{}, fmt.Errorf("failed to parse user part from JID: %s", raw)
+	}
+	return jid, nil
 }
 
 func (cm *ClientManager) GetClient(sessionID string) *whatsmeow.Client {
@@ -135,28 +168,35 @@ func (cm *ClientManager) Connect(sessionID string) error {
 		return fmt.Errorf("session not found")
 	}
 
-	if session.PhoneNumber != "" {
-		// Parse JID
-		// Try parsing as full JID first
-		jid, err := types.ParseJID(session.PhoneNumber)
-		if err != nil {
-			// Fallback: Try appending suffix if it looks like just a number
-			// But now we expect full JID in DB.
-			jid, err = types.ParseJID(session.PhoneNumber + "@s.whatsapp.net")
-		}
+	ctx := context.Background()
 
-		if err == nil {
-			// GetDevice expects JID, but in SQLStore it might return error if not found.
-			// Also, GetDevice signature might vary.
-			// Checking docs: func (c *Container) GetDevice(jid types.JID) (*store.Device, error)
-			deviceStore, err = cm.Container.GetDevice(context.Background(), jid)
+	if session.PhoneNumber != "" {
+		jid, err := normalizeSessionJID(session.PhoneNumber)
+		if err != nil {
+			fmt.Printf("Invalid stored JID for session %s (%s): %v\n", sessionID, session.PhoneNumber, err)
+		} else {
+			deviceStore, err = cm.Container.GetDevice(ctx, jid)
 			if err != nil {
-				// If not found, we might want to create new, but we have a phone number.
-				// Maybe the DB was cleared?
-				// Let's fallback to creating new if not found?
-				// But we can't create new with specific JID easily.
-				// We'll just log error for now.
-				fmt.Printf("Device not found for %s: %v\n", session.PhoneNumber, err)
+				fmt.Printf("Device lookup failed for %s: %v\n", jid.String(), err)
+			}
+
+			// If direct lookup failed (e.g. stored JID missing device ID), search by user/server.
+			if deviceStore == nil {
+				devices, listErr := cm.Container.GetAllDevices(ctx)
+				if listErr != nil {
+					fmt.Printf("Failed to list devices for session %s: %v\n", sessionID, listErr)
+				} else {
+					for _, dev := range devices {
+						if dev.ID.User == jid.User && dev.ID.Server == jid.Server {
+							deviceStore = dev
+							// Persist the full JID (with device) so next reconnect uses the exact match.
+							if dev.ID.String() != session.PhoneNumber {
+								cm.SessionRepo.UpdateSessionStatus(sessionID, session.Status, dev.ID.String(), session.DeviceInfo)
+							}
+							break
+						}
+					}
+				}
 			}
 		}
 	}
@@ -225,5 +265,33 @@ func (cm *ClientManager) Disconnect(sessionID string) {
 		client.Disconnect()
 		delete(cm.Clients, sessionID)
 		cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, "", nil)
+	}
+}
+
+// ReconnectAllSessions reconnects all sessions that are marked as connected in the DB
+func (cm *ClientManager) ReconnectAllSessions() {
+	// Try reconnecting any session that has a stored JID (phone_number),
+	// even if status wasn't left as "connected" due to an unclean shutdown.
+	sessions, err := cm.SessionRepo.GetSessionsWithPhoneNumber()
+	if err != nil {
+		fmt.Printf("Failed to fetch connected sessions for reconnect: %v\n", err)
+		return
+	}
+
+	if len(sessions) == 0 {
+		fmt.Println("ReconnectAllSessions: no sessions with stored JID found")
+		return
+	}
+
+	fmt.Printf("ReconnectAllSessions: found %d session(s) with stored JID\n", len(sessions))
+
+	for _, session := range sessions {
+		fmt.Printf("Reconnecting session: %s (%s) [status=%s, jid=%s]\n", session.SessionName, session.ID, session.Status, session.PhoneNumber)
+		go func(id string) {
+			if err := cm.Connect(id); err != nil {
+				fmt.Printf("Failed to reconnect session %s: %v\n", id, err)
+				// Optional: Update status to disconnected if reconnect fails repeatedly
+			}
+		}(session.ID)
 	}
 }

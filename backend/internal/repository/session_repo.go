@@ -147,17 +147,152 @@ func (r *SessionRepository) UpdateSession(session *model.Session) error {
 }
 
 func (r *SessionRepository) UpdateSessionStatus(id string, status model.SessionStatus, phoneNumber string, deviceInfo *model.DeviceInfo) error {
-	query := `
-		UPDATE sessions
-		SET status = $1, phone_number = $2, device_info = $3, updated_at = CURRENT_TIMESTAMP, last_connected = CASE WHEN $1 = 'connected' THEN CURRENT_TIMESTAMP ELSE last_connected END
-		WHERE id = $4`
+	var query string
+	var args []interface{}
 
-	_, err := r.DB.Exec(query, status, phoneNumber, deviceInfo, id)
-	return err
+	if status == model.SessionStatusConnected {
+		query = `
+			UPDATE sessions
+			SET status = $1,
+			    phone_number = $2,
+			    device_info = $3,
+			    updated_at = CURRENT_TIMESTAMP,
+			    last_connected = CURRENT_TIMESTAMP
+			WHERE id = $4`
+		args = []interface{}{status, phoneNumber, deviceInfo, id}
+	} else {
+		query = `
+			UPDATE sessions
+			SET status = $1,
+			    phone_number = $2,
+			    device_info = $3,
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE id = $4`
+		args = []interface{}{status, phoneNumber, deviceInfo, id}
+	}
+
+	res, err := r.DB.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return errors.New("no session updated (invalid session id)")
+	}
+	return nil
 }
 
 func (r *SessionRepository) DeleteSession(id string, userID string) error {
 	query := `DELETE FROM sessions WHERE id = $1 AND user_id = $2`
 	_, err := r.DB.Exec(query, id, userID)
 	return err
+}
+
+func (r *SessionRepository) GetSessionsByStatus(status model.SessionStatus) ([]*model.Session, error) {
+	query := `
+		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, created_at, updated_at
+		FROM sessions
+		WHERE status = $1`
+
+	rows, err := r.DB.Query(query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*model.Session
+	for rows.Next() {
+		var s model.Session
+		var lastConnected sql.NullTime
+		var phoneNumber sql.NullString
+		var deviceInfo []byte
+
+		err := rows.Scan(
+			&s.ID,
+			&s.UserID,
+			&s.SessionName,
+			&s.WebhookURL,
+			&s.Status,
+			&phoneNumber,
+			&deviceInfo,
+			&lastConnected,
+			&s.CreatedAt,
+			&s.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if lastConnected.Valid {
+			s.LastConnected = &lastConnected.Time
+		}
+		if phoneNumber.Valid {
+			s.PhoneNumber = phoneNumber.String
+		}
+		if deviceInfo != nil {
+			s.DeviceInfo = &model.DeviceInfo{}
+			if err := json.Unmarshal(deviceInfo, s.DeviceInfo); err != nil {
+				s.DeviceInfo = nil
+			}
+		}
+
+		sessions = append(sessions, &s)
+	}
+	return sessions, nil
+}
+
+// GetSessionsWithPhoneNumber returns all sessions that have a stored JID/phone_number.
+// This is useful for reconnecting previously paired sessions even if their status
+// was not left as "connected" (e.g. after an unexpected restart).
+func (r *SessionRepository) GetSessionsWithPhoneNumber() ([]*model.Session, error) {
+	query := `
+		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, created_at, updated_at
+		FROM sessions
+		WHERE phone_number IS NOT NULL AND phone_number <> ''`
+
+	rows, err := r.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*model.Session
+	for rows.Next() {
+		var s model.Session
+		var lastConnected sql.NullTime
+		var phoneNumber sql.NullString
+		var deviceInfo []byte
+
+		err := rows.Scan(
+			&s.ID,
+			&s.UserID,
+			&s.SessionName,
+			&s.WebhookURL,
+			&s.Status,
+			&phoneNumber,
+			&deviceInfo,
+			&lastConnected,
+			&s.CreatedAt,
+			&s.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if lastConnected.Valid {
+			s.LastConnected = &lastConnected.Time
+		}
+		if phoneNumber.Valid {
+			s.PhoneNumber = phoneNumber.String
+		}
+		if deviceInfo != nil {
+			s.DeviceInfo = &model.DeviceInfo{}
+			if err := json.Unmarshal(deviceInfo, s.DeviceInfo); err != nil {
+				s.DeviceInfo = nil
+			}
+		}
+
+		sessions = append(sessions, &s)
+	}
+	return sessions, nil
 }
