@@ -23,6 +23,9 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
             setStats(response.data);
         } catch (error) {
             console.error('Failed to fetch analytics:', error);
+            if (error.response) {
+                console.error('Error response:', error.response.status, error.response.data);
+            }
             toast.error('Failed to load analytics');
         } finally {
             setLoading(false);
