@@ -1,0 +1,15 @@
+[Unit]
+Description=WAGO Backend
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/wago-project/backend
+ExecStart=/root/wago-project/backend/wago
+EnvironmentFile=/root/wago-project/backend/.env
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
