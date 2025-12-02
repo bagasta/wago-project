@@ -102,7 +102,7 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
                             leaveTo="opacity-0 scale-95"
                         >
                             <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-gray-900 border border-gray-800 p-6 text-left align-middle shadow-xl transition-all">
-                                <div className="flex justify-between items-center mb-6">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                     <div>
                                         <Dialog.Title as="h3" className="text-xl font-bold text-white flex items-center gap-2">
                                             <Activity className="w-5 h-5 text-blue-500" />
@@ -112,15 +112,15 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
                                             {session?.session_name} • {session?.phone_number || 'No Phone Number'}
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 w-full sm:w-auto">
                                         <button
                                             onClick={handleExportContacts}
                                             disabled={exporting}
-                                            className="p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 transition-colors flex items-center gap-2 text-sm font-medium"
+                                            className="flex-1 sm:flex-none justify-center p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 transition-colors flex items-center gap-2 text-sm font-medium"
                                             title="Export Contacts to CSV"
                                         >
                                             <Download className="w-4 h-4" />
-                                            {exporting ? 'Exporting...' : 'Export Contacts'}
+                                            <span className="sm:inline">Export Contacts</span>
                                         </button>
                                         <button
                                             onClick={onClose}
