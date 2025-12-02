@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { X, Activity, MessageSquare, ArrowDownLeft, ArrowUpRight, Zap, Clock } from 'lucide-react';
+import { X, Activity, MessageSquare, ArrowDownLeft, ArrowUpRight, Zap, Clock, Download } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import api from '../../services/api';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 export default function AnalyticsModal({ isOpen, onClose, session }) {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [exporting, setExporting] = useState(false);
 
     useEffect(() => {
         if (isOpen && session) {
@@ -25,6 +26,47 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
             toast.error('Failed to load analytics');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleExportContacts = async () => {
+        setExporting(true);
+        try {
+            const response = await api.get(`/sessions/${session.session_id}/contacts`);
+            const contacts = response.data;
+
+            if (!contacts || contacts.length === 0) {
+                toast.info('No contacts found to export');
+                return;
+            }
+
+            // Convert to CSV
+            const headers = ['Phone Number', 'Last Active', 'Message Count'];
+            const csvContent = [
+                headers.join(','),
+                ...contacts.map(c => [
+                    c.phone_number,
+                    new Date(c.last_active).toISOString(),
+                    c.message_count
+                ].join(','))
+            ].join('\n');
+
+            // Download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `contacts_${session.session_name}_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            toast.success(`Exported ${contacts.length} contacts`);
+        } catch (error) {
+            console.error('Failed to export contacts:', error);
+            toast.error('Failed to export contacts');
+        } finally {
+            setExporting(false);
         }
     };
 
@@ -67,12 +109,23 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
                                             {session?.session_name} • {session?.phone_number || 'No Phone Number'}
                                         </p>
                                     </div>
-                                    <button
-                                        onClick={onClose}
-                                        className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleExportContacts}
+                                            disabled={exporting}
+                                            className="p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 transition-colors flex items-center gap-2 text-sm font-medium"
+                                            title="Export Contacts to CSV"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            {exporting ? 'Exporting...' : 'Export Contacts'}
+                                        </button>
+                                        <button
+                                            onClick={onClose}
+                                            className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {loading ? (

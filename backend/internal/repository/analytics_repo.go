@@ -100,3 +100,28 @@ func (r *AnalyticsRepository) GetSessionAnalytics(sessionID string) (*model.Sess
 
 	return stats, nil
 }
+
+func (r *AnalyticsRepository) GetUniqueContacts(sessionID string) ([]model.Contact, error) {
+	query := `
+		SELECT from_number, MAX(timestamp) as last_active, COUNT(*) as message_count
+		FROM messages_log
+		WHERE session_id = $1 AND direction = 'incoming'
+		GROUP BY from_number
+		ORDER BY last_active DESC
+	`
+	rows, err := r.DB.Query(query, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contacts []model.Contact
+	for rows.Next() {
+		var c model.Contact
+		if err := rows.Scan(&c.PhoneNumber, &c.LastActive, &c.MessageCount); err != nil {
+			return nil, err
+		}
+		contacts = append(contacts, c)
+	}
+	return contacts, nil
+}
