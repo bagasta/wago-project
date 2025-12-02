@@ -5,12 +5,12 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import SessionForm from '../components/ui/SessionForm';
 import QRCodeModal from '../components/ui/QRCodeModal';
 import AnalyticsModal from '../components/ui/AnalyticsModal';
-import { Plus, Trash2, QrCode, Smartphone, Wifi, WifiOff, Loader2, Edit2, BarChart2 } from 'lucide-react';
+import { Plus, Trash2, QrCode, Smartphone, Wifi, WifiOff, Loader2, Edit2, BarChart2, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Dashboard() {
     const { logout } = useAuth();
-    const { sessions, isLoading, addSession, removeSession, connectSession, updateSessionStatus } = useSessions();
+    const { sessions, isLoading, addSession, removeSession, connectSession, updateSessionStatus, updateSession } = useSessions();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [qrCode, setQrCode] = useState(null);
@@ -171,6 +171,21 @@ export default function Dashboard() {
                                             )}
                                         </div>
                                     )}
+
+                                    <div className="flex items-center justify-between py-3 border-t border-gray-800">
+                                        <span className="text-sm text-gray-400 flex items-center gap-2">
+                                            <MessageSquare className="w-4 h-4" /> Group Response
+                                        </span>
+                                        <button
+                                            onClick={() => updateSession(session.session_id, { is_group_response_enabled: !session.is_group_response_enabled })}
+                                            className={`w-10 h-5 rounded-full relative transition-colors ${session.is_group_response_enabled ? 'bg-blue-600' : 'bg-gray-700'
+                                                }`}
+                                            title={session.is_group_response_enabled ? "Disable Group Response" : "Enable Group Response"}
+                                        >
+                                            <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-all ${session.is_group_response_enabled ? 'left-6' : 'left-1'
+                                                }`} />
+                                        </button>
+                                    </div>
 
                                     <div className="flex flex-wrap gap-3 pt-2">
                                         {session.status !== 'connected' && (

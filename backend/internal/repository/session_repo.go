@@ -17,8 +17,8 @@ func NewSessionRepository(db *sql.DB) *SessionRepository {
 
 func (r *SessionRepository) CreateSession(session *model.Session) (*model.Session, error) {
 	query := `
-		INSERT INTO sessions (user_id, session_name, webhook_url, status)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO sessions (user_id, session_name, webhook_url, status, is_group_response_enabled)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at, updated_at`
 
 	err := r.DB.QueryRow(
@@ -27,6 +27,7 @@ func (r *SessionRepository) CreateSession(session *model.Session) (*model.Sessio
 		session.SessionName,
 		session.WebhookURL,
 		session.Status,
+		session.IsGroupResponseEnabled,
 	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
 
 	if err != nil {
@@ -38,7 +39,7 @@ func (r *SessionRepository) CreateSession(session *model.Session) (*model.Sessio
 
 func (r *SessionRepository) GetSessionsByUserID(userID string) ([]*model.Session, error) {
 	query := `
-		SELECT id, session_name, webhook_url, status, phone_number, last_connected, created_at, updated_at
+		SELECT id, session_name, webhook_url, status, phone_number, last_connected, is_group_response_enabled, created_at, updated_at
 		FROM sessions
 		WHERE user_id = $1
 		ORDER BY created_at DESC`
@@ -62,6 +63,7 @@ func (r *SessionRepository) GetSessionsByUserID(userID string) ([]*model.Session
 			&s.Status,
 			&phoneNumber,
 			&lastConnected,
+			&s.IsGroupResponseEnabled,
 			&s.CreatedAt,
 			&s.UpdatedAt,
 		)
@@ -89,7 +91,7 @@ func (r *SessionRepository) GetSessionByID(id string) (*model.Session, error) {
 	var deviceInfo []byte
 
 	query := `
-		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, created_at, updated_at
+		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, is_group_response_enabled, created_at, updated_at
 		FROM sessions
 		WHERE id = $1`
 
@@ -102,6 +104,7 @@ func (r *SessionRepository) GetSessionByID(id string) (*model.Session, error) {
 		&phoneNumber,
 		&deviceInfo,
 		&lastConnected,
+		&s.IsGroupResponseEnabled,
 		&s.CreatedAt,
 		&s.UpdatedAt,
 	)
@@ -139,10 +142,10 @@ func (r *SessionRepository) GetSessionByID(id string) (*model.Session, error) {
 func (r *SessionRepository) UpdateSession(session *model.Session) error {
 	query := `
 		UPDATE sessions
-		SET session_name = $1, webhook_url = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $3 AND user_id = $4`
+		SET session_name = $1, webhook_url = $2, is_group_response_enabled = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $4 AND user_id = $5`
 
-	_, err := r.DB.Exec(query, session.SessionName, session.WebhookURL, session.ID, session.UserID)
+	_, err := r.DB.Exec(query, session.SessionName, session.WebhookURL, session.IsGroupResponseEnabled, session.ID, session.UserID)
 	return err
 }
 
@@ -190,7 +193,7 @@ func (r *SessionRepository) DeleteSession(id string, userID string) error {
 
 func (r *SessionRepository) GetSessionsByStatus(status model.SessionStatus) ([]*model.Session, error) {
 	query := `
-		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, created_at, updated_at
+		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, is_group_response_enabled, created_at, updated_at
 		FROM sessions
 		WHERE status = $1`
 
@@ -216,6 +219,7 @@ func (r *SessionRepository) GetSessionsByStatus(status model.SessionStatus) ([]*
 			&phoneNumber,
 			&deviceInfo,
 			&lastConnected,
+			&s.IsGroupResponseEnabled,
 			&s.CreatedAt,
 			&s.UpdatedAt,
 		)
@@ -246,7 +250,7 @@ func (r *SessionRepository) GetSessionsByStatus(status model.SessionStatus) ([]*
 // was not left as "connected" (e.g. after an unexpected restart).
 func (r *SessionRepository) GetSessionsWithPhoneNumber() ([]*model.Session, error) {
 	query := `
-		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, created_at, updated_at
+		SELECT id, user_id, session_name, webhook_url, status, phone_number, device_info, last_connected, is_group_response_enabled, created_at, updated_at
 		FROM sessions
 		WHERE phone_number IS NOT NULL AND phone_number <> ''`
 
@@ -272,6 +276,7 @@ func (r *SessionRepository) GetSessionsWithPhoneNumber() ([]*model.Session, erro
 			&phoneNumber,
 			&deviceInfo,
 			&lastConnected,
+			&s.IsGroupResponseEnabled,
 			&s.CreatedAt,
 			&s.UpdatedAt,
 		)

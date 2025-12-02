@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSessions, createSession, startSession, deleteSession } from '../services/session';
+import { getSessions, createSession, startSession, deleteSession, updateSession as updateSessionService } from '../services/session';
 import { toast } from 'sonner';
 
 export function useSessions() {
@@ -68,6 +68,25 @@ export function useSessions() {
         }));
     };
 
+    const updateSession = async (id, data) => {
+        try {
+            const response = await updateSessionService(id, data);
+            if (response.success) {
+                toast.success('Session updated successfully');
+                setSessions(prev => prev.map(s => {
+                    if (s.session_id === id) {
+                        return { ...s, ...response.data };
+                    }
+                    return s;
+                }));
+                return response.data;
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update session');
+            throw error;
+        }
+    };
+
     return {
         sessions,
         isLoading,
@@ -75,6 +94,7 @@ export function useSessions() {
         addSession,
         removeSession,
         connectSession,
-        updateSessionStatus
+        updateSessionStatus,
+        updateSession
     };
 }

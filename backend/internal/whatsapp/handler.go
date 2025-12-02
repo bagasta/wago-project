@@ -225,6 +225,11 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 
 		// Group Message Handling: Only respond if mentioned
 		if v.Info.IsGroup {
+			if !session.IsGroupResponseEnabled {
+				fmt.Printf("Ignoring group message from %s: group response disabled.\n", v.Info.Sender.User)
+				return
+			}
+
 			client := cm.GetClient(sessionID)
 			if client != nil && client.Store.ID != nil {
 				targets := []types.JID{*client.Store.ID}

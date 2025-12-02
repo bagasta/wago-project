@@ -46,3 +46,7 @@ func (s *SessionService) DeleteSession(id, userID string) error {
 	s.ClientMgr.Disconnect(id)
 	return s.SessionRepo.DeleteSession(id, userID)
 }
+
+func (s *SessionService) UpdateSession(session *model.Session) error {
+	return s.SessionRepo.UpdateSession(session)
+}

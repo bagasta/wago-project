@@ -105,6 +105,58 @@ func (h *SessionHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	utils.SuccessResponse(w, http.StatusOK, nil, "Session deleted successfully")
 }
 
+func (h *SessionHandler) UpdateSession(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(string)
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req struct {
+		SessionName            *string `json:"session_name"`
+		WebhookURL             *string `json:"webhook_url"`
+		IsGroupResponseEnabled *bool   `json:"is_group_response_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	session, err := h.SessionService.GetSession(id)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if session == nil || session.UserID != userID {
+		utils.ErrorResponse(w, http.StatusNotFound, "Session not found")
+		return
+	}
+
+	if req.SessionName != nil {
+		if strings.TrimSpace(*req.SessionName) == "" || len(*req.SessionName) > 100 {
+			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid session name")
+			return
+		}
+		session.SessionName = *req.SessionName
+	}
+	if req.WebhookURL != nil {
+		if _, err := url.ParseRequestURI(*req.WebhookURL); err != nil {
+			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid webhook URL")
+			return
+		}
+		session.WebhookURL = *req.WebhookURL
+	}
+	if req.IsGroupResponseEnabled != nil {
+		session.IsGroupResponseEnabled = *req.IsGroupResponseEnabled
+	}
+
+	err = h.SessionService.UpdateSession(session)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(w, http.StatusOK, session, "Session updated successfully")
+}
+
 func (h *SessionHandler) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]

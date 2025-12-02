@@ -35,16 +35,17 @@ func (d *DeviceInfo) Scan(value interface{}) error {
 }
 
 type Session struct {
-	ID            string        `json:"session_id"`
-	UserID        string        `json:"-"`
-	SessionName   string        `json:"session_name"`
-	WebhookURL    string        `json:"webhook_url"`
-	Status        SessionStatus `json:"status"`
-	QRCode        string        `json:"qr_code,omitempty"`
-	PhoneNumber   string        `json:"phone_number,omitempty"`
-	DeviceInfo    *DeviceInfo   `json:"device_info,omitempty"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
-	LastConnected *time.Time    `json:"last_connected,omitempty"`
-	UptimeSeconds int64         `json:"uptime_seconds,omitempty"`
+	ID                     string        `json:"session_id"`
+	UserID                 string        `json:"-"`
+	SessionName            string        `json:"session_name"`
+	WebhookURL             string        `json:"webhook_url"`
+	Status                 SessionStatus `json:"status"`
+	QRCode                 string        `json:"qr_code,omitempty"`
+	PhoneNumber            string        `json:"phone_number,omitempty"`
+	DeviceInfo             *DeviceInfo   `json:"device_info,omitempty"`
+	CreatedAt              time.Time     `json:"created_at"`
+	UpdatedAt              time.Time     `json:"updated_at"`
+	LastConnected          *time.Time    `json:"last_connected,omitempty"`
+	UptimeSeconds          int64         `json:"uptime_seconds,omitempty"`
+	IsGroupResponseEnabled bool          `json:"is_group_response_enabled"`
 }

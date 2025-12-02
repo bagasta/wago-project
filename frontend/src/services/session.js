@@ -19,3 +19,8 @@ export const deleteSession = async (id) => {
     const response = await api.delete(`/sessions/${id}`);
     return response.data;
 };
+
+export const updateSession = async (id, data) => {
+    const response = await api.put(`/sessions/${id}`, data);
+    return response.data;
+};

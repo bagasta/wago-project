@@ -1,0 +1,2 @@
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_group_response_enabled BOOLEAN DEFAULT FALSE;
+
