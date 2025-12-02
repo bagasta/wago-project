@@ -4,6 +4,7 @@ import { useSessions } from '../hooks/useSessions';
 import { useWebSocket } from '../hooks/useWebSocket';
 import SessionForm from '../components/ui/SessionForm';
 import QRCodeModal from '../components/ui/QRCodeModal';
+import AnalyticsModal from '../components/ui/AnalyticsModal';
 import { Plus, Trash2, QrCode, Smartphone, Wifi, WifiOff, Loader2, Edit2, BarChart2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,6 +15,8 @@ export default function Dashboard() {
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [qrCode, setQrCode] = useState(null);
     const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+    const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+    const [selectedSession, setSelectedSession] = useState(null);
 
     // WebSocket for active session (only one at a time for now to save resources, or we can listen to all?)
     // Ideally we should have a global WS or one per session card.
@@ -76,6 +79,11 @@ export default function Dashboard() {
         setActiveSessionId(null); // Disconnect WS
     };
 
+    const handleViewAnalytics = (session) => {
+        setSelectedSession(session);
+        setIsAnalyticsModalOpen(true);
+    };
+
     if (isLoading) {
         return (
             <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -110,7 +118,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Stats Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="p-6 bg-gray-900 rounded-xl border border-gray-800">
                         <h3 className="text-sm font-medium text-gray-400 mb-2">Total Sessions</h3>
                         <p className="text-3xl font-bold text-white">{sessions.length}</p>
@@ -120,10 +128,6 @@ export default function Dashboard() {
                         <p className="text-3xl font-bold text-green-400">
                             {sessions.filter(s => s.status === 'connected').length}
                         </p>
-                    </div>
-                    <div className="p-6 bg-gray-900 rounded-xl border border-gray-800">
-                        <h3 className="text-sm font-medium text-gray-400 mb-2">Total Messages</h3>
-                        <p className="text-3xl font-bold text-blue-400">0</p>
                     </div>
                 </div>
 
@@ -184,6 +188,7 @@ export default function Dashboard() {
                                             <Edit2 className="w-4 h-4" />
                                         </button>
                                         <button
+                                            onClick={() => handleViewAnalytics(session)}
                                             className="py-2 px-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors"
                                             title="View Analytics"
                                         >
@@ -215,6 +220,12 @@ export default function Dashboard() {
                 onClose={handleCloseQR}
                 qrCode={qrCode}
                 status="qr"
+            />
+
+            <AnalyticsModal
+                isOpen={isAnalyticsModalOpen}
+                onClose={() => setIsAnalyticsModalOpen(false)}
+                session={selectedSession}
             />
         </div>
     );

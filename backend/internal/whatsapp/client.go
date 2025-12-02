@@ -23,13 +23,14 @@ type ClientManager struct {
 	Clients        map[string]*whatsmeow.Client
 	Config         *config.Config
 	SessionRepo    *repository.SessionRepository
+	AnalyticsRepo  *repository.AnalyticsRepository
 	WSHub          *websocket.Hub
 	WebhookService *webhook.WebhookService
 	Container      *sqlstore.Container
 	mu             sync.RWMutex
 }
 
-func NewClientManager(cfg *config.Config, sessionRepo *repository.SessionRepository, wsHub *websocket.Hub, webhookService *webhook.WebhookService) *ClientManager {
+func NewClientManager(cfg *config.Config, sessionRepo *repository.SessionRepository, analyticsRepo *repository.AnalyticsRepository, wsHub *websocket.Hub, webhookService *webhook.WebhookService) *ClientManager {
 	// Initialize whatsmeow SQL store
 	dbLog := waLog.Stdout("Database", cfg.LogLevel, true)
 	container, err := sqlstore.New(context.Background(), "postgres", cfg.DatabaseURL, dbLog)
@@ -41,6 +42,7 @@ func NewClientManager(cfg *config.Config, sessionRepo *repository.SessionReposit
 		Clients:        make(map[string]*whatsmeow.Client),
 		Config:         cfg,
 		SessionRepo:    sessionRepo,
+		AnalyticsRepo:  analyticsRepo,
 		WSHub:          wsHub,
 		WebhookService: webhookService,
 		Container:      container,

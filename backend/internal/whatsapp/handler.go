@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"wago-backend/internal/model"
 	"wago-backend/internal/webhook"
 
@@ -201,6 +202,27 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			return
 		}
 
+		// Log Message to DB
+		go func() {
+			msgLog := &model.MessageLog{
+				SessionID:   sessionID,
+				Direction:   "incoming",
+				FromNumber:  payload.From,
+				ToNumber:    "", // We don't have our own number easily accessible here without querying
+				MessageType: payload.MessageType,
+				Content:     payload.Message,
+				IsGroup:     payload.IsGroup,
+				Timestamp:   payload.Timestamp,
+			}
+			if payload.IsGroup {
+				msgLog.GroupID = v.Info.Chat.User
+				msgLog.GroupName = v.Info.PushName // Not accurate for group name, but PushName is sender name
+			}
+			if err := cm.AnalyticsRepo.LogMessage(msgLog); err != nil {
+				fmt.Printf("Failed to log message: %v\n", err)
+			}
+		}()
+
 		// Group Message Handling: Only respond if mentioned
 		if v.Info.IsGroup {
 			client := cm.GetClient(sessionID)
@@ -221,6 +243,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 
 		// Send Webhook and Handle Response
 		go func() {
+			start := time.Now()
 			// Send Typing Indicator
 			client := cm.GetClient(sessionID)
 			if client != nil {
@@ -230,6 +253,32 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			}
 
 			response, err := cm.WebhookService.SendWebhook(session.WebhookURL, payload)
+
+			// Calculate response time
+			duration := time.Since(start).Milliseconds()
+
+			// Log Analytics
+			go func() {
+				analytics := &model.Analytics{
+					SessionID:           sessionID,
+					MessageID:           v.Info.ID,
+					FromNumber:          payload.From,
+					MessageType:         payload.MessageType,
+					IsGroup:             payload.IsGroup,
+					IsMention:           false, // We can refine this
+					WebhookSent:         true,
+					WebhookSuccess:      err == nil,
+					WebhookResponseTime: int(duration),
+					WebhookStatusCode:   200, // Simplify for now, WebhookService should return status
+				}
+				if err != nil {
+					analytics.ErrorMessage = err.Error()
+					analytics.WebhookStatusCode = 500
+				}
+				if logErr := cm.AnalyticsRepo.LogAnalytics(analytics); logErr != nil {
+					fmt.Printf("Failed to log analytics: %v\n", logErr)
+				}
+			}()
 
 			// Stop Typing Indicator
 			if client != nil {
@@ -257,6 +306,27 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 						fmt.Printf("[Handler] Failed to send response: %v\n", err)
 					} else {
 						fmt.Printf("[Handler] Response sent successfully. ID: %s\n", resp.ID)
+
+						// Log Outgoing Message (AI Reply)
+						go func() {
+							msgLog := &model.MessageLog{
+								SessionID:   sessionID,
+								Direction:   "outgoing",
+								FromNumber:  "", // It's us
+								ToNumber:    chatJID.User,
+								MessageType: "text",
+								Content:     response,
+								IsGroup:     v.Info.IsGroup,
+								Timestamp:   time.Now(),
+							}
+							if v.Info.IsGroup {
+								msgLog.GroupID = chatJID.User
+								msgLog.GroupName = v.Info.PushName
+							}
+							if err := cm.AnalyticsRepo.LogMessage(msgLog); err != nil {
+								fmt.Printf("Failed to log outgoing message: %v\n", err)
+							}
+						}()
 					}
 				} else {
 					fmt.Println("[Handler] Client is nil, cannot send response")
