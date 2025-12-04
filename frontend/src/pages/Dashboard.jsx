@@ -5,18 +5,21 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import SessionForm from '../components/ui/SessionForm';
 import QRCodeModal from '../components/ui/QRCodeModal';
 import AnalyticsModal from '../components/ui/AnalyticsModal';
-import { Plus, Trash2, QrCode, Smartphone, Wifi, WifiOff, Loader2, Edit2, BarChart2, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, QrCode, Smartphone, Wifi, WifiOff, Loader2, Edit2, BarChart2, MessageSquare, Power } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Dashboard() {
     const { logout } = useAuth();
-    const { sessions, isLoading, addSession, removeSession, connectSession, updateSessionStatus, updateSession } = useSessions();
+    const { sessions, isLoading, addSession, removeSession, connectSession, disconnectSession, updateSessionStatus, updateSession } = useSessions();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [activeSessionId, setActiveSessionId] = useState(null);
     const [qrCode, setQrCode] = useState(null);
     const [isQRModalOpen, setIsQRModalOpen] = useState(false);
     const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
     const [selectedSession, setSelectedSession] = useState(null);
+    const [editingSession, setEditingSession] = useState(null);
+
+    const [connectingSessionId, setConnectingSessionId] = useState(null);
 
     // WebSocket for active session (only one at a time for now to save resources, or we can listen to all?)
     // Ideally we should have a global WS or one per session card.
@@ -56,21 +59,41 @@ export default function Dashboard() {
         setIsAddModalOpen(false);
     };
 
+    const handleEditSession = (session) => {
+        setEditingSession(session);
+        setIsAddModalOpen(true);
+    };
+
+    const handleUpdateSession = async (data) => {
+        await updateSession(editingSession.session_id, data);
+        setIsAddModalOpen(false);
+        setEditingSession(null);
+    };
+
+    const handleCloseModal = () => {
+        setIsAddModalOpen(false);
+        setEditingSession(null);
+    };
+
     const handleConnect = async (session) => {
-        setActiveSessionId(session.session_id);
+        setConnectingSessionId(session.session_id);
         setQrCode(null);
         try {
             const data = await connectSession(session.session_id);
             // Backend returns status. If 'qr', it will send QR via WS.
             // If 'connected', it returns connected.
             if (data.status === 'connected') {
-                toast.success('Already connected');
-                setActiveSessionId(null);
+                toast.success('WhatsApp Connected!');
+                updateSessionStatus(session.session_id, 'connected');
+                // No need to set activeSessionId (WS) if already connected
             } else {
+                setActiveSessionId(session.session_id);
                 setIsQRModalOpen(true);
             }
         } catch (error) {
             setActiveSessionId(null);
+        } finally {
+            setConnectingSessionId(null);
         }
     };
 
@@ -188,16 +211,30 @@ export default function Dashboard() {
                                     </div>
 
                                     <div className="flex flex-wrap gap-3 pt-2">
-                                        {session.status !== 'connected' && (
+                                        {session.status !== 'connected' ? (
                                             <button
                                                 onClick={() => handleConnect(session)}
-                                                className="flex-1 min-w-[120px] py-2 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                                                disabled={connectingSessionId === session.session_id}
+                                                className="flex-1 min-w-[120px] py-2 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                <QrCode className="w-4 h-4" /> Connect
+                                                {connectingSessionId === session.session_id ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <QrCode className="w-4 h-4" />
+                                                )}
+                                                Connect
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => disconnectSession(session.session_id)}
+                                                className="flex-1 min-w-[120px] py-2 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <Power className="w-4 h-4" /> Stop
                                             </button>
                                         )}
                                         <div className="flex gap-3 flex-1 justify-end">
                                             <button
+                                                onClick={() => handleEditSession(session)}
                                                 className="py-2 px-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors"
                                                 title="Edit Session"
                                             >
@@ -228,8 +265,9 @@ export default function Dashboard() {
 
             <SessionForm
                 isOpen={isAddModalOpen}
-                onClose={() => setIsAddModalOpen(false)}
-                onSubmit={handleCreateSession}
+                onClose={handleCloseModal}
+                onSubmit={editingSession ? handleUpdateSession : handleCreateSession}
+                initialData={editingSession}
             />
 
             <QRCodeModal

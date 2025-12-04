@@ -1,19 +1,31 @@
 import { Dialog, Transition } from '@headlessui/react';
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
 
-export default function SessionForm({ isOpen, onClose, onSubmit }) {
+export default function SessionForm({ isOpen, onClose, onSubmit, initialData = null }) {
     const [name, setName] = useState('');
     const [webhook, setWebhook] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (initialData) {
+            setName(initialData.session_name);
+            setWebhook(initialData.webhook_url);
+        } else {
+            setName('');
+            setWebhook('');
+        }
+    }, [initialData, isOpen]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
         try {
             await onSubmit({ session_name: name, webhook_url: webhook });
-            setName('');
-            setWebhook('');
+            if (!initialData) {
+                setName('');
+                setWebhook('');
+            }
             onClose();
         } catch (error) {
             // Error handled in hook
@@ -51,7 +63,7 @@ export default function SessionForm({ isOpen, onClose, onSubmit }) {
                             <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-gray-900 border border-gray-800 p-6 text-left align-middle shadow-xl transition-all">
                                 <div className="flex justify-between items-center mb-4">
                                     <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white">
-                                        Add New Session
+                                        {initialData ? 'Edit Session' : 'Add New Session'}
                                     </Dialog.Title>
                                     <button onClick={onClose} className="text-gray-400 hover:text-white">
                                         <X className="w-5 h-5" />
@@ -88,7 +100,7 @@ export default function SessionForm({ isOpen, onClose, onSubmit }) {
                                             disabled={isLoading}
                                             className="w-full inline-flex justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50"
                                         >
-                                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Create Session'}
+                                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (initialData ? 'Save Changes' : 'Create Session')}
                                         </button>
                                     </div>
                                 </form>

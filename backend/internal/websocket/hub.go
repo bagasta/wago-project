@@ -137,6 +137,10 @@ func originAllowed(origin string, allowed []string) bool {
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, sessionID string, allowedOrigins []string) {
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
+		// Allow localhost for development
+		if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+			return true
+		}
 		return originAllowed(origin, allowedOrigins)
 	}
 

@@ -149,7 +149,7 @@ func (r *SessionRepository) UpdateSession(session *model.Session) error {
 	return err
 }
 
-func (r *SessionRepository) UpdateSessionStatus(id string, status model.SessionStatus, phoneNumber string, deviceInfo *model.DeviceInfo) error {
+func (r *SessionRepository) UpdateSessionStatus(id string, status model.SessionStatus, phoneNumber *string, deviceInfo *model.DeviceInfo) error {
 	var query string
 	var args []interface{}
 
@@ -157,21 +157,31 @@ func (r *SessionRepository) UpdateSessionStatus(id string, status model.SessionS
 		query = `
 			UPDATE sessions
 			SET status = $1,
-			    phone_number = $2,
+			    phone_number = COALESCE($2, phone_number),
 			    device_info = $3,
 			    updated_at = CURRENT_TIMESTAMP,
 			    last_connected = CURRENT_TIMESTAMP
 			WHERE id = $4`
 		args = []interface{}{status, phoneNumber, deviceInfo, id}
 	} else {
-		query = `
-			UPDATE sessions
-			SET status = $1,
-			    phone_number = $2,
-			    device_info = $3,
-			    updated_at = CURRENT_TIMESTAMP
-			WHERE id = $4`
-		args = []interface{}{status, phoneNumber, deviceInfo, id}
+		if phoneNumber != nil {
+			query = `
+				UPDATE sessions
+				SET status = $1,
+				    phone_number = $2,
+				    device_info = $3,
+				    updated_at = CURRENT_TIMESTAMP
+				WHERE id = $4`
+			args = []interface{}{status, phoneNumber, deviceInfo, id}
+		} else {
+			query = `
+				UPDATE sessions
+				SET status = $1,
+				    device_info = $3,
+				    updated_at = CURRENT_TIMESTAMP
+				WHERE id = $4`
+			args = []interface{}{status, deviceInfo, id}
+		}
 	}
 
 	res, err := r.DB.Exec(query, args...)

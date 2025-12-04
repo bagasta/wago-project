@@ -79,7 +79,7 @@ func (h *SessionHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.SessionService.StartSession(id)
+	status, err := h.SessionService.StartSession(id)
 	if err != nil {
 		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -87,8 +87,29 @@ func (h *SessionHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 
 	utils.SuccessResponse(w, http.StatusOK, map[string]string{
 		"session_id": id,
-		"status":     "qr", // Assuming it goes to QR or connected
+		"status":     status,
 	}, "Session started")
+}
+
+func (h *SessionHandler) StopSession(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	if strings.TrimSpace(id) == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid session id")
+		return
+	}
+
+	err := h.SessionService.StopSession(id)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(w, http.StatusOK, map[string]string{
+		"session_id": id,
+		"status":     "disconnected",
+	}, "Session stopped")
 }
 
 func (h *SessionHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {

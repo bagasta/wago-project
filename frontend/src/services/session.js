@@ -15,6 +15,11 @@ export const startSession = async (id) => {
     return response.data;
 };
 
+export const stopSession = async (id) => {
+    const response = await api.post(`/sessions/${id}/stop`);
+    return response.data;
+};
+
 export const deleteSession = async (id) => {
     const response = await api.delete(`/sessions/${id}`);
     return response.data;

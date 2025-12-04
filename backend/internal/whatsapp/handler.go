@@ -103,7 +103,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 
 		fmt.Printf("PairSuccess: Saving session %s with JID %s\n", sessionID, phoneNumber)
 
-		err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, phoneNumber, deviceInfo)
+		err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, &phoneNumber, deviceInfo)
 		if err != nil {
 			fmt.Printf("Failed to update session status: %v\n", err)
 		} else {
@@ -137,7 +137,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		}
 
 		// Persist connected status + phone (if available)
-		if err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, phoneNumber, nil); err != nil {
+		if err := cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, &phoneNumber, nil); err != nil {
 			fmt.Printf("Failed to update session status on reconnect: %v\n", err)
 		} else {
 			if updated, fetchErr := cm.SessionRepo.GetSessionByID(sessionID); fetchErr == nil && updated != nil {
@@ -152,7 +152,8 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		})
 
 	case *events.LoggedOut:
-		cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, "", nil)
+		empty := ""
+		cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, &empty, nil)
 		cm.WSHub.SendToSession(sessionID, "status_update", map[string]interface{}{
 			"status": "disconnected",
 		})
@@ -189,12 +190,14 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		if payload.Message == "" {
 			payload.Message = v.Message.GetExtendedTextMessage().GetText()
 		}
-		// Handle image caption
-		if payload.Message == "" {
-			payload.Message = v.Message.GetImageMessage().GetCaption()
-			if v.Message.GetImageMessage() != nil {
-				payload.MessageType = "image"
+
+		// Handle image message
+		if imgMsg := v.Message.GetImageMessage(); imgMsg != nil {
+			payload.MessageType = "image"
+			if payload.Message == "" {
+				payload.Message = imgMsg.GetCaption()
 			}
+
 		}
 
 		// Filter out empty messages (e.g. status updates, protocol messages)
@@ -247,7 +250,33 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		}
 
 		// Send Webhook and Handle Response
-		go func() {
+		// Send Webhook and Handle Response
+		go func(payload webhook.WebhookPayload) {
+			// Check for image and download here
+			if imgMsg := v.Message.GetImageMessage(); imgMsg != nil {
+				client := cm.GetClient(sessionID)
+				if client != nil {
+					data, err := client.Download(context.Background(), imgMsg)
+					if err != nil {
+						fmt.Printf("Failed to download image: %v\n", err)
+					} else {
+						payload.MediaData = data
+						payload.MediaMimeType = imgMsg.GetMimetype()
+						// Determine extension from mimetype
+						ext := "jpg" // default
+						if strings.Contains(payload.MediaMimeType, "png") {
+							ext = "png"
+						} else if strings.Contains(payload.MediaMimeType, "jpeg") {
+							ext = "jpg"
+						} else if strings.Contains(payload.MediaMimeType, "webp") {
+							ext = "webp"
+						}
+						payload.MediaName = fmt.Sprintf("image_%d.%s", v.Info.Timestamp.Unix(), ext)
+						fmt.Printf("Downloaded image, size: %d bytes\n", len(data))
+					}
+				}
+			}
+
 			start := time.Now()
 			// Send Typing Indicator
 			client := cm.GetClient(sessionID)
@@ -339,7 +368,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			} else {
 				fmt.Println("[Handler] Webhook response is empty, nothing to send.")
 			}
-		}()
+		}(payload)
 
 		// Notify WS (optional, for debugging)
 		msgBytes, _ := json.Marshal(v.Message)

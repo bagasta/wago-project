@@ -37,8 +37,13 @@ func (s *SessionService) GetSession(id string) (*model.Session, error) {
 	return s.SessionRepo.GetSessionByID(id)
 }
 
-func (s *SessionService) StartSession(id string) error {
+func (s *SessionService) StartSession(id string) (string, error) {
 	return s.ClientMgr.Connect(id)
+}
+
+func (s *SessionService) StopSession(id string) error {
+	s.ClientMgr.Disconnect(id)
+	return nil
 }
 
 func (s *SessionService) DeleteSession(id, userID string) error {

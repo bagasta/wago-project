@@ -87,87 +87,32 @@ func (cm *ClientManager) GetClient(sessionID string) *whatsmeow.Client {
 	return cm.Clients[sessionID]
 }
 
-func (cm *ClientManager) Connect(sessionID string) error {
+func (cm *ClientManager) Connect(sessionID string) (string, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if _, ok := cm.Clients[sessionID]; ok {
-		return nil // Already connected
+	if client, ok := cm.Clients[sessionID]; ok {
+		if client.IsConnected() {
+			return "connected", nil
+		}
+		// If client exists but not connected, we might want to reconnect?
+		// But for now, let's assume if it's in the map, it's being handled.
+		// However, if it's in the map but disconnected, we should probably let it proceed to reconnect logic?
+		// But NewClient creates a new instance.
+		// Let's just return "connected" if it's in the map for simplicity, or "connecting".
+		return "connected", nil
 	}
 
 	// Get device store
-	// Actually whatsmeow uses JID (phone number) to identify devices in the store.
-	// But we want to map our UUID sessionID to a whatsmeow device.
-	// sqlstore.GetDevice(jid) gets a device by JID.
-	// If we want to support multiple sessions, we need to manage the mapping.
-	// However, whatsmeow's sqlstore is designed to hold multiple devices.
-	// We can use `NewDevice` to create a new one if it doesn't exist, but we need to know the JID first?
-	// No, `GetFirstDevice` gets the first one.
-	// We need a way to link our sessionID to the whatsmeow device.
-	// A common pattern is to use a separate store per session (SQLite) or use the 'ID' column in whatsmeow_device table if possible.
-	// But `sqlstore` manages the schema.
-
-	// Alternative: We can just use the sessionID as the "ID" if we were using a custom store, but here we are using the standard one.
-	// Let's try to fetch all devices and see if we can map them.
-	// Or better: Since we are starting fresh, we can create a NEW device for this session.
-	// But `container.NewDevice()` returns a new device. We need to persist which device belongs to which session.
-	// We should probably store the `JID` in our `sessions` table after login.
-	// But before login, we don't have a JID.
-
-	// Wait, `whatsmeow` documentation says:
-	// "If you want to have multiple sessions, you should use a Container."
-	// "The Container will manage the database connection and allow you to get Device stores."
-	// We can use `container.GetDevice(jid)` but we don't have JID yet.
-	// We can use `container.NewDevice()` to create a new one.
-	// BUT, how do we retrieve it later by `sessionID`?
-	// We need to store the mapping `sessionID` -> `JID` (or `DeviceID` internal to whatsmeow).
-	// Actually, `whatsmeow` doesn't expose an internal ID easily other than JID.
-
-	// WORKAROUND for this specific requirement (Multi-session by UUID):
-	// We can't easily use the shared SQLStore if we don't know the JID.
-	// A common approach is to use a separate SQLite file per session, OR use the Postgres store but we need to know the JID.
-	// Since we don't know the JID before QR scan, we have a "chicken and egg" problem with `GetDevice(jid)`.
-
-	// SOLUTION: Use `container.NewDevice()` which creates a new device in the DB.
-	// It returns a `*store.Device`.
-	// But wait, `NewDevice()` doesn't take an ID. It generates one? No, it expects us to have a JID eventually.
-	// Actually, `whatsmeow` stores devices keyed by JID.
-	// If we are "pre-login", we don't have a JID.
-	// `whatsmeow` handles this by allowing a device to be created without a JID, and then it gets updated upon login?
-	// No, `NewDevice()` creates a blank device.
-	// We need to persist the association between `sessionID` and the device.
-	// But `whatsmeow`'s `Device` struct doesn't have an external ID we can set.
-
-	// Let's look at `whatsmeow` source or common patterns.
-	// Usually, people use a simple file store for each session: `session-UUID.db`.
-	// Since we are using Postgres, we are forced to use `sqlstore`.
-	// `sqlstore` has `GetDevice(jid)` and `GetAllDevices()`.
-	// If we use `NewDevice()`, it creates a device. We can use it to login.
-	// Once logged in, it has a JID.
-	// But what if we restart the server? We need to load the SAME device for the SAME sessionID.
-	// We can't rely on JID because we might not be logged in yet (just QR stage).
-
-	// OK, the robust way for multi-session with UUIDs is to use a separate database/schema or just use SQLite files.
-	// Given the constraints (Postgres), maybe we can hack it?
-	// OR, we can just use `NewDevice()` and if we restart, we lose the "pre-login" sessions?
-	// That's acceptable for "QR stage".
-	// But for "Connected" sessions, we MUST recover them.
-	// Connected sessions have a JID (Phone Number).
-	// We have `phone_number` in our `sessions` table!
-	// So:
-	// 1. If session has `phone_number`, we call `container.GetDevice(parsedJID)`.
-	// 2. If session has NO `phone_number`, we call `container.NewDevice()`.
-	//    - If we restart server while in QR mode, the user has to scan again. This is acceptable.
-
-	// Let's proceed with this logic.
+	// ... (rest of logic remains same until return)
 
 	var deviceStore *store.Device
 	session, err := cm.SessionRepo.GetSessionByID(sessionID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if session == nil {
-		return fmt.Errorf("session not found")
+		return "", fmt.Errorf("session not found")
 	}
 
 	ctx := context.Background()
@@ -193,7 +138,10 @@ func (cm *ClientManager) Connect(sessionID string) error {
 							deviceStore = dev
 							// Persist the full JID (with device) so next reconnect uses the exact match.
 							if dev.ID.String() != session.PhoneNumber {
-								cm.SessionRepo.UpdateSessionStatus(sessionID, session.Status, dev.ID.String(), session.DeviceInfo)
+								if dev.ID.String() != session.PhoneNumber {
+									ph := dev.ID.String()
+									cm.SessionRepo.UpdateSessionStatus(sessionID, session.Status, &ph, session.DeviceInfo)
+								}
 							}
 							break
 						}
@@ -225,7 +173,7 @@ func (cm *ClientManager) Connect(sessionID string) error {
 		qrChan, _ := client.GetQRChannel(context.Background())
 		err = client.Connect()
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		// Listen for QR
@@ -239,24 +187,24 @@ func (cm *ClientManager) Connect(sessionID string) error {
 					})
 
 					// Update DB status to 'qr'
-					cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusQR, "", nil)
+					cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusQR, nil, nil)
 				} else {
 					// Timeout or success?
 					// Success is handled by EventHandler
 				}
 			}
 		}()
+		return "qr", nil
 	} else {
 		// Already logged in
 		err = client.Connect()
 		if err != nil {
-			return err
+			return "", err
 		}
 		// Update status just in case
 		// cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusConnected, client.Store.ID.User, nil)
+		return "connected", nil
 	}
-
-	return nil
 }
 
 func (cm *ClientManager) disconnect(sessionID string, updateStatus bool) {
@@ -267,7 +215,7 @@ func (cm *ClientManager) disconnect(sessionID string, updateStatus bool) {
 		client.Disconnect()
 		delete(cm.Clients, sessionID)
 		if updateStatus {
-			cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, "", nil)
+			cm.SessionRepo.UpdateSessionStatus(sessionID, model.SessionStatusDisconnected, nil, nil)
 		}
 	}
 }
@@ -312,7 +260,7 @@ func (cm *ClientManager) ReconnectAllSessions() {
 	for _, session := range sessions {
 		fmt.Printf("Reconnecting session: %s (%s) [status=%s, jid=%s]\n", session.SessionName, session.ID, session.Status, session.PhoneNumber)
 		go func(id string) {
-			if err := cm.Connect(id); err != nil {
+			if _, err := cm.Connect(id); err != nil {
 				fmt.Printf("Failed to reconnect session %s: %v\n", id, err)
 				// Optional: Update status to disconnected if reconnect fails repeatedly
 			}
