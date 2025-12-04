@@ -84,9 +84,11 @@ func (s *WebhookService) SendWebhook(webhookURL string, payload WebhookPayload) 
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}
 		req.Header.Set("Content-Type", writer.FormDataContentType())
+		fmt.Printf("[Webhook] Sending multipart request with media. Size: %d bytes\n", body.Len())
 
 	} else {
 		// Send as JSON
+		fmt.Printf("[Webhook] Sending JSON request (no media).\n")
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal webhook payload: %w", err)

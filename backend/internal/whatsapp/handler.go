@@ -254,11 +254,17 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		go func(payload webhook.WebhookPayload) {
 			// Check for image and download here
 			if imgMsg := v.Message.GetImageMessage(); imgMsg != nil {
+				fmt.Printf("[Handler] Found image message. Attempting to download...\n")
 				client := cm.GetClient(sessionID)
 				if client != nil {
-					data, err := client.Download(context.Background(), imgMsg)
+					// Use timeout for download
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+
+					data, err := client.Download(ctx, imgMsg)
 					if err != nil {
-						fmt.Printf("Failed to download image: %v\n", err)
+						fmt.Printf("[Handler] Failed to download image: %v\n", err)
+						payload.Message += fmt.Sprintf(" [Image Download Failed: %v]", err)
 					} else {
 						payload.MediaData = data
 						payload.MediaMimeType = imgMsg.GetMimetype()
@@ -272,8 +278,11 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 							ext = "webp"
 						}
 						payload.MediaName = fmt.Sprintf("image_%d.%s", v.Info.Timestamp.Unix(), ext)
-						fmt.Printf("Downloaded image, size: %d bytes\n", len(data))
+						fmt.Printf("[Handler] Downloaded image successfully. Size: %d bytes, Mime: %s\n", len(data), payload.MediaMimeType)
 					}
+				} else {
+					fmt.Printf("[Handler] Client is nil, cannot download image.\n")
+					payload.Message += " [Image Download Failed: Client not found]"
 				}
 			}
 
