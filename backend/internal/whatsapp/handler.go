@@ -197,11 +197,10 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			if payload.Message == "" {
 				payload.Message = imgMsg.GetCaption()
 			}
-
 		}
 
 		// Filter out empty messages (e.g. status updates, protocol messages)
-		if payload.Message == "" {
+		if payload.Message == "" && payload.MessageType != "image" {
 			return
 		}
 
