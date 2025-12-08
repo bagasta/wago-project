@@ -3,6 +3,8 @@
 .gocache-build/
 .gomodcache/
 .gopath/
+.npm-cache/
+.cache/
 
 # Backend build outputs and local data
 backend/bin/
@@ -30,3 +32,6 @@ frontend/.env.*
 Thumbs.db
 .idea/
 .vscode/
+
+# Temp scratch space
+tmp/
