@@ -1,4 +1,6 @@
 [Unit]
+[Unit]
+# Update WorkingDirectory/ExecStart/EnvironmentFile paths to your repo location before enabling.
 Description=WAGO Backend
 After=network.target
 

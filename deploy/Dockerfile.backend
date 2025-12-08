@@ -1,0 +1,19 @@
+FROM golang:1.24 AS builder
+
+WORKDIR /app
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -o wago cmd/server/main.go
+
+FROM gcr.io/distroless/base-debian12
+WORKDIR /app
+
+COPY --from=builder /app/wago /app/wago
+COPY --from=builder /app/migrations /app/migrations
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/wago"]

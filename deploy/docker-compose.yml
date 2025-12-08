@@ -1,0 +1,55 @@
+version: "3.8"
+
+networks:
+  wago:
+  root_default:
+    external: true
+
+services:
+  wago-backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: wago-backend:latest
+    environment:
+      APP_PORT: "8080"
+      DATABASE_URL: "postgres://wago:wago_pg_pwd_123@host.docker.internal:5432/wago?sslmode=disable"
+      JWT_SECRET: "689ba7129e7607b9da194a98c8cb0001b127616bc3e7e663128ae68e0add1b1b"
+      WHATSAPP_DATA_DIR: "/data/whatsapp-sessions"
+      ALLOWED_ORIGINS: "https://wago-wms.chiefaiofficer.id"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - ../backend/whatsapp-sessions:/data/whatsapp-sessions
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - wago
+      - root_default
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "root_default"
+      traefik.http.routers.wago-backend.rule: "Host(`wago-wms.chiefaiofficer.id`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
+      traefik.http.routers.wago-backend.entrypoints: "web,websecure"
+      traefik.http.routers.wago-backend.tls: "true"
+      traefik.http.routers.wago-backend.tls.certresolver: "mytlschallenge"
+      traefik.http.services.wago-backend.loadbalancer.server.port: "8080"
+
+  wago-frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    image: wago-frontend:latest
+    depends_on:
+      - wago-backend
+    networks:
+      - wago
+      - root_default
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "root_default"
+      traefik.http.routers.wago-frontend.rule: "Host(`wago-wms.chiefaiofficer.id`)"
+      traefik.http.routers.wago-frontend.entrypoints: "web,websecure"
+      traefik.http.routers.wago-frontend.tls: "true"
+      traefik.http.routers.wago-frontend.tls.certresolver: "mytlschallenge"
+      traefik.http.routers.wago-frontend.priority: "10"
+      traefik.http.services.wago-frontend.loadbalancer.server.port: "80"
