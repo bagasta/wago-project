@@ -55,3 +55,7 @@ func (s *SessionService) DeleteSession(id, userID string) error {
 func (s *SessionService) UpdateSession(session *model.Session) error {
 	return s.SessionRepo.UpdateSession(session)
 }
+
+func (s *SessionService) SendMessage(sessionID, recipient, message string) error {
+	return s.ClientMgr.SendMessage(sessionID, recipient, message)
+}

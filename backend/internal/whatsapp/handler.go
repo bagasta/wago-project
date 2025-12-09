@@ -204,6 +204,31 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			return
 		}
 
+		// Group Message Handling: Only respond if mentioned
+		isMention := false
+		if v.Info.IsGroup {
+			if !session.IsGroupResponseEnabled {
+				fmt.Printf("Ignoring group message from %s: group response disabled.\n", v.Info.Sender.User)
+				return
+			}
+
+			client := cm.GetClient(sessionID)
+			if client != nil && client.Store.ID != nil {
+				targets := []types.JID{*client.Store.ID}
+				if client.Store.LID.User != "" || client.Store.LID.Server != "" {
+					targets = append(targets, client.Store.LID)
+				}
+
+				if !isMentioned(v.Message, payload.Message, targets) {
+					fmt.Printf("Ignoring group message from %s: not mentioned. My JIDs: %v\n", v.Info.Sender.User, targets)
+					return
+				}
+				isMention = true
+			} else {
+				fmt.Println("[GroupMsg] Client or Store ID is nil")
+			}
+		}
+
 		// Log Message to DB
 		go func() {
 			msgLog := &model.MessageLog{
@@ -224,29 +249,6 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 				fmt.Printf("Failed to log message: %v\n", err)
 			}
 		}()
-
-		// Group Message Handling: Only respond if mentioned
-		if v.Info.IsGroup {
-			if !session.IsGroupResponseEnabled {
-				fmt.Printf("Ignoring group message from %s: group response disabled.\n", v.Info.Sender.User)
-				return
-			}
-
-			client := cm.GetClient(sessionID)
-			if client != nil && client.Store.ID != nil {
-				targets := []types.JID{*client.Store.ID}
-				if client.Store.LID.User != "" || client.Store.LID.Server != "" {
-					targets = append(targets, client.Store.LID)
-				}
-
-				if !isMentioned(v.Message, payload.Message, targets) {
-					fmt.Printf("Ignoring group message from %s: not mentioned. My JIDs: %v\n", v.Info.Sender.User, targets)
-					return
-				}
-			} else {
-				fmt.Println("[GroupMsg] Client or Store ID is nil")
-			}
-		}
 
 		// Send Webhook and Handle Response
 		// Send Webhook and Handle Response
@@ -307,7 +309,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 					FromNumber:          payload.From,
 					MessageType:         payload.MessageType,
 					IsGroup:             payload.IsGroup,
-					IsMention:           false, // We can refine this
+					IsMention:           isMention,
 					WebhookSent:         true,
 					WebhookSuccess:      err == nil,
 					WebhookResponseTime: int(duration),

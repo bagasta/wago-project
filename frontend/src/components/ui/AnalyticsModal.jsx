@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { X, Activity, MessageSquare, ArrowDownLeft, ArrowUpRight, Zap, Clock, Download } from 'lucide-react';
+import { X, Activity, MessageSquare, ArrowDownLeft, ArrowUpRight, Zap, Clock, Download, AtSign } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import api from '../../services/api';
 import { toast } from 'sonner';
@@ -138,7 +138,7 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
                                 ) : stats ? (
                                     <div className="space-y-6">
                                         {/* Key Metrics */}
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                             <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50">
                                                 <div className="flex items-center gap-2 text-gray-400 mb-2">
                                                     <MessageSquare className="w-4 h-4" />
@@ -166,6 +166,13 @@ export default function AnalyticsModal({ isOpen, onClose, session }) {
                                                     <span className="text-xs font-medium uppercase tracking-wider">Webhook Success</span>
                                                 </div>
                                                 <p className="text-2xl font-bold text-white">{stats.webhook_success_rate.toFixed(1)}%</p>
+                                            </div>
+                                            <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50">
+                                                <div className="flex items-center gap-2 text-yellow-400 mb-2">
+                                                    <AtSign className="w-4 h-4" />
+                                                    <span className="text-xs font-medium uppercase tracking-wider">Group Mentions</span>
+                                                </div>
+                                                <p className="text-2xl font-bold text-white">{stats.group_mentions}</p>
                                             </div>
                                         </div>
 

@@ -204,3 +204,34 @@ func (h *SessionHandler) WebSocketHandler(w http.ResponseWriter, r *http.Request
 
 	websocket.ServeWs(h.WSHub, w, r, id, h.Config.AllowedOrigins)
 }
+
+func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req struct {
+		Recipient string `json:"recipient"`
+		Message   string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if strings.TrimSpace(req.Recipient) == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Recipient is required")
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Message is required")
+		return
+	}
+
+	err := h.SessionService.SendMessage(id, req.Recipient, req.Message)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(w, http.StatusOK, nil, "Message sent successfully")
+}

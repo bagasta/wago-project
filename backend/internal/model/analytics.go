@@ -41,6 +41,7 @@ type SessionAnalytics struct {
 	WebhookSuccessRate float64     `json:"webhook_success_rate"`
 	AvgResponseTime    float64     `json:"avg_response_time"`
 	LastActive         *time.Time  `json:"last_active"`
+	GroupMentions      int         `json:"group_mentions"`
 	DailyStats         []DailyStat `json:"daily_stats"`
 }
 

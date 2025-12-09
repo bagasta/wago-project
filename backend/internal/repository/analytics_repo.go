@@ -71,6 +71,12 @@ func (r *AnalyticsRepository) GetSessionAnalytics(sessionID string) (*model.Sess
 		stats.AvgResponseTime = float64(totalTime) / float64(totalWebhooks)
 	}
 
+	// Group Mentions
+	err = r.DB.QueryRow("SELECT COUNT(*) FROM analytics WHERE session_id = $1 AND is_mention = true", sessionID).Scan(&stats.GroupMentions)
+	if err != nil {
+		return nil, err
+	}
+
 	// Last Active
 	var lastActive sql.NullTime
 	err = r.DB.QueryRow("SELECT MAX(timestamp) FROM messages_log WHERE session_id = $1", sessionID).Scan(&lastActive)

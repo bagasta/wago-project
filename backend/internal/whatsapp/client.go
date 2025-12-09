@@ -13,10 +13,12 @@ import (
 
 	_ "github.com/lib/pq"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 )
 
 type ClientManager struct {
@@ -266,4 +268,30 @@ func (cm *ClientManager) ReconnectAllSessions() {
 			}
 		}(session.ID)
 	}
+}
+
+// SendMessage sends a text message from a specific session to a recipient
+func (cm *ClientManager) SendMessage(sessionID string, recipient string, message string) error {
+	client := cm.GetClient(sessionID)
+	if client == nil {
+		return fmt.Errorf("client not found or not connected")
+	}
+
+	if !client.IsConnected() {
+		return fmt.Errorf("client is not connected")
+	}
+
+	// Parse recipient JID
+	jid, err := normalizeSessionJID(recipient)
+	if err != nil {
+		return fmt.Errorf("invalid recipient number: %v", err)
+	}
+
+	// Construct message
+	msg := &waE2E.Message{
+		Conversation: proto.String(message),
+	}
+
+	_, err = client.SendMessage(context.Background(), jid, msg)
+	return err
 }
