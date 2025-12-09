@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"wago-backend/internal/config"
+	"wago-backend/internal/repository"
 	"wago-backend/internal/utils"
 
 	"sync"
@@ -13,28 +15,20 @@ import (
 
 type Middleware struct {
 	Config       *config.Config
+	UserRepo     *repository.UserRepository
 	rateLimiters sync.Map
 }
 
-func NewMiddleware(cfg *config.Config) *Middleware {
-	return &Middleware{Config: cfg}
+func NewMiddleware(cfg *config.Config, userRepo *repository.UserRepository) *Middleware {
+	return &Middleware{
+		Config:   cfg,
+		UserRepo: userRepo,
+	}
 }
 
 func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			utils.ErrorResponse(w, http.StatusUnauthorized, "Missing authorization header")
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid authorization format")
-			return
-		}
-
-		userID, err := utils.ParseUserIDFromToken(parts[1], m.Config.JWTSecret)
+		userID, err := m.parseToken(r.Header.Get("Authorization"))
 		if err != nil {
 			utils.ErrorResponse(w, http.StatusUnauthorized, err.Error())
 			return
@@ -43,6 +37,72 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), "user_id", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// TokenOrPINMiddleware allows Authorization via JWT Bearer token or PIN (Authorization: Pin <pin> or X-Pin header).
+func (m *Middleware) TokenOrPINMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try Bearer token first to stay backward compatible
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			userID, err := m.parseTokenOrPin(authHeader)
+			if err == nil {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
+		// Fallback: X-Pin header
+		if pin := strings.TrimSpace(r.Header.Get("X-Pin")); pin != "" {
+			userID, err := m.userIDFromPIN(pin)
+			if err == nil {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
+		utils.ErrorResponse(w, http.StatusUnauthorized, "Missing or invalid credentials")
+	})
+}
+
+func (m *Middleware) parseToken(authHeader string) (string, error) {
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", errors.New("invalid authorization format")
+	}
+	return utils.ParseUserIDFromToken(parts[1], m.Config.JWTSecret)
+}
+
+func (m *Middleware) parseTokenOrPin(authHeader string) (string, error) {
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 {
+		return "", errors.New("invalid authorization format")
+	}
+
+	switch parts[0] {
+	case "Bearer":
+		return utils.ParseUserIDFromToken(parts[1], m.Config.JWTSecret)
+	case "Pin", "PIN", "pin":
+		return m.userIDFromPIN(parts[1])
+	default:
+		return "", errors.New("invalid authorization format")
+	}
+}
+
+func (m *Middleware) userIDFromPIN(pin string) (string, error) {
+	if m.UserRepo == nil {
+		return "", errors.New("user repository not configured")
+	}
+
+	user, err := m.UserRepo.GetUserByPIN(strings.TrimSpace(pin))
+	if err != nil {
+		return "", err
+	}
+	if user == nil {
+		return "", errors.New("invalid credentials")
+	}
+	return user.ID, nil
 }
 
 func (m *Middleware) CORS(next http.Handler) http.Handler {

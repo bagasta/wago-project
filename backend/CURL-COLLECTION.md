@@ -103,3 +103,15 @@ curl -X POST http://localhost:8080/api/v1/sessions/{session_id}/send-message \
     "message": "Hello from Wago API!"
   }'
 ```
+
+#### Send Message with PIN (alternative)
+```bash
+curl -X POST http://localhost:8080/api/v1/sessions/{session_id}/send-message \
+  -H "Authorization: Pin <YOUR_PIN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient": "628123456789",
+    "message": "Hello from Wago API!"
+  }'
+```
+> You can also use header `X-Pin: <YOUR_PIN>` if you prefer keeping `Authorization` for other auth schemes.

@@ -208,6 +208,7 @@ func (h *SessionHandler) WebSocketHandler(w http.ResponseWriter, r *http.Request
 func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+	userID := r.Context().Value("user_id").(string)
 
 	var req struct {
 		Recipient string `json:"recipient"`
@@ -227,7 +228,17 @@ func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.SessionService.SendMessage(id, req.Recipient, req.Message)
+	session, err := h.SessionService.GetSession(id)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if session == nil || session.UserID != userID {
+		utils.ErrorResponse(w, http.StatusForbidden, "Session not accessible")
+		return
+	}
+
+	err = h.SessionService.SendMessage(id, req.Recipient, req.Message)
 	if err != nil {
 		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
