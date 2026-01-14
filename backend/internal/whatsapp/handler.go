@@ -199,8 +199,38 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			}
 		}
 
+		// Handle location message
+		if locMsg := v.Message.GetLocationMessage(); locMsg != nil {
+			payload.MessageType = "location"
+			payload.Location = &webhook.LocationInfo{
+				Latitude:  locMsg.GetDegreesLatitude(),
+				Longitude: locMsg.GetDegreesLongitude(),
+				Name:      locMsg.GetName(),
+				URL:       locMsg.GetURL(),
+				IsLive:    false,
+			}
+			if payload.Message == "" {
+				payload.Message = fmt.Sprintf("📍 Location shared: %s (%.6f, %.6f)",
+					locMsg.GetName(), locMsg.GetDegreesLatitude(), locMsg.GetDegreesLongitude())
+			}
+		}
+
+		// Handle live location message
+		if liveLocMsg := v.Message.GetLiveLocationMessage(); liveLocMsg != nil {
+			payload.MessageType = "live_location"
+			payload.Location = &webhook.LocationInfo{
+				Latitude:  liveLocMsg.GetDegreesLatitude(),
+				Longitude: liveLocMsg.GetDegreesLongitude(),
+				IsLive:    true,
+			}
+			if payload.Message == "" {
+				payload.Message = fmt.Sprintf("📍 Live location shared (%.6f, %.6f)",
+					liveLocMsg.GetDegreesLatitude(), liveLocMsg.GetDegreesLongitude())
+			}
+		}
+
 		// Filter out empty messages (e.g. status updates, protocol messages)
-		if payload.Message == "" && payload.MessageType != "image" {
+		if payload.Message == "" && payload.MessageType != "image" && payload.MessageType != "location" && payload.MessageType != "live_location" {
 			return
 		}
 

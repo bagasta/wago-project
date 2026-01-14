@@ -115,3 +115,110 @@ curl -X POST http://localhost:8080/api/v1/sessions/{session_id}/send-message \
   }'
 ```
 > You can also use header `X-Pin: <YOUR_PIN>` if you prefer keeping `Authorization` for other auth schemes.
+
+## Webhook Payload Examples
+
+When a user sends a message to your WhatsApp bot, Wago will send a POST request to your webhook URL with the following payload structure:
+
+### Text Message
+```json
+{
+  "session_id": "sess_123...",
+  "from": "628123456789",
+  "to": "",
+  "message": "Hello bot!",
+  "timestamp": "2026-01-14T12:00:00Z",
+  "is_group": false,
+  "push_name": "John Doe",
+  "message_type": "text"
+}
+```
+
+### Image Message
+```json
+{
+  "session_id": "sess_123...",
+  "from": "628123456789",
+  "to": "",
+  "message": "Check this out!",
+  "timestamp": "2026-01-14T12:00:00Z",
+  "is_group": false,
+  "push_name": "John Doe",
+  "message_type": "image"
+}
+```
+> For image messages, the webhook will receive `multipart/form-data` with the image file attached as `file` field.
+
+### Location Message
+```json
+{
+  "session_id": "sess_123...",
+  "from": "628123456789",
+  "to": "",
+  "message": "📍 Location shared: Starbucks Reserve (−6.175392, 106.827153)",
+  "timestamp": "2026-01-14T12:00:00Z",
+  "is_group": false,
+  "push_name": "John Doe",
+  "message_type": "location",
+  "location": {
+    "latitude": -6.175392,
+    "longitude": 106.827153,
+    "name": "Starbucks Reserve",
+    "url": "https://maps.google.com/?q=-6.175392,106.827153"
+  }
+}
+```
+
+### Live Location Message
+```json
+{
+  "session_id": "sess_123...",
+  "from": "628123456789",
+  "to": "",
+  "message": "📍 Live location shared (−6.175392, 106.827153)",
+  "timestamp": "2026-01-14T12:00:00Z",
+  "is_group": false,
+  "push_name": "John Doe",
+  "message_type": "live_location",
+  "location": {
+    "latitude": -6.175392,
+    "longitude": 106.827153,
+    "is_live": true
+  }
+}
+```
+
+### Group Message (with mention)
+```json
+{
+  "session_id": "sess_123...",
+  "from": "628123456789",
+  "to": "",
+  "message": "@bot please help",
+  "timestamp": "2026-01-14T12:00:00Z",
+  "is_group": true,
+  "push_name": "John Doe",
+  "message_type": "text",
+  "group_info": {
+    "id": "123456789@g.us",
+    "name": "My Group Chat"
+  }
+}
+```
+
+## Webhook Response
+
+Your webhook should respond with a JSON object containing a text response that will be sent back to the user:
+
+```json
+{
+  "output": "This is the reply message"
+}
+```
+
+Or simply return plain text:
+```
+This is the reply message
+```
+
+The system will automatically extract the response from common keys: `output`, `text`, `message`, `response`, `body`, or `content`.

@@ -24,23 +24,32 @@ func NewWebhookService() *WebhookService {
 }
 
 type WebhookPayload struct {
-	SessionID     string     `json:"session_id"`
-	From          string     `json:"from"`
-	To            string     `json:"to"`
-	Message       string     `json:"message"`
-	Timestamp     time.Time  `json:"timestamp"`
-	IsGroup       bool       `json:"is_group"`
-	GroupInfo     *GroupInfo `json:"group_info,omitempty"`
-	PushName      string     `json:"push_name"`
-	MessageType   string     `json:"message_type"`
-	MediaData     []byte     `json:"-"` // Binary data, not for JSON
-	MediaName     string     `json:"-"`
-	MediaMimeType string     `json:"-"`
+	SessionID     string        `json:"session_id"`
+	From          string        `json:"from"`
+	To            string        `json:"to"`
+	Message       string        `json:"message"`
+	Timestamp     time.Time     `json:"timestamp"`
+	IsGroup       bool          `json:"is_group"`
+	GroupInfo     *GroupInfo    `json:"group_info,omitempty"`
+	PushName      string        `json:"push_name"`
+	MessageType   string        `json:"message_type"`
+	MediaData     []byte        `json:"-"` // Binary data, not for JSON
+	MediaName     string        `json:"-"`
+	MediaMimeType string        `json:"-"`
+	Location      *LocationInfo `json:"location,omitempty"`
 }
 
 type GroupInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type LocationInfo struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Name      string  `json:"name,omitempty"`    // Location name/address if available
+	URL       string  `json:"url,omitempty"`     // URL to location if available
+	IsLive    bool    `json:"is_live,omitempty"` // Whether it's a live location
 }
 
 func (s *WebhookService) SendWebhook(webhookURL string, payload WebhookPayload) (string, error) {
@@ -68,6 +77,10 @@ func (s *WebhookService) SendWebhook(webhookURL string, payload WebhookPayload) 
 		if payload.GroupInfo != nil {
 			groupInfoJSON, _ := json.Marshal(payload.GroupInfo)
 			_ = writer.WriteField("group_info", string(groupInfoJSON))
+		}
+		if payload.Location != nil {
+			locationJSON, _ := json.Marshal(payload.Location)
+			_ = writer.WriteField("location", string(locationJSON))
 		}
 
 		// Add file
