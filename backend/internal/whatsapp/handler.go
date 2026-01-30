@@ -175,6 +175,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 		}
 
 		// Construct Payload
+		// Construct Payload
 		payload := webhook.WebhookPayload{
 			SessionID:   sessionID,
 			From:        v.Info.Sender.User, // Phone number
@@ -184,6 +185,40 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			IsGroup:     v.Info.IsGroup,
 			PushName:    v.Info.PushName,
 			MessageType: "text", // Simplify for now
+		}
+
+		// Attempt to resolve LID to Phone Number if Sender is a LID
+		if v.Info.Sender.Server == types.HiddenUserServer {
+			// If it's a LID, we want the User part (the UUID).
+			// v.Info.Sender.User should be the UUID.
+			// However, if the user says it changes, maybe they are seeing Device variations effectively?
+			// Let's force using the Base ID for the field we send to avoid device suffix confusion.
+			payload.SenderLID = v.Info.Sender.ToNonAD().User
+
+			client := cm.GetClient(sessionID)
+			if client != nil && client.Store != nil && client.Store.LIDs != nil {
+				// Use Non-AD JID for lookup to ensure we match the User, not a specific device session
+				pn, err := client.Store.LIDs.GetPNForLID(context.Background(), v.Info.Sender.ToNonAD())
+				if err == nil && pn.User != "" {
+					fmt.Printf("[Handler] Resolved LID %s (Device %d) to Phone %s\n", v.Info.Sender.User, v.Info.Sender.Device, pn.User)
+					payload.From = pn.User
+				} else {
+					fmt.Printf("[Handler] Failed to resolve LID %s: %v\n", v.Info.Sender.User, err)
+				}
+			}
+		} else if v.Info.Sender.Server == types.DefaultUserServer {
+			// Sender is standard PN, try to resolve LID
+			client := cm.GetClient(sessionID)
+			if client != nil && client.Store != nil && client.Store.LIDs != nil {
+				// Use Non-AD JID for lookup
+				lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), v.Info.Sender.ToNonAD())
+				if err == nil && lid.User != "" {
+					fmt.Printf("[Handler] Resolved Phone %s (Device %d) to LID %s\n", v.Info.Sender.User, v.Info.Sender.Device, lid.User)
+					payload.SenderLID = lid.User
+				} else {
+					fmt.Printf("[Handler] No LID found for Phone %s: %v\n", v.Info.Sender.User, err)
+				}
+			}
 		}
 
 		// Handle extended text message (if conversation is empty)

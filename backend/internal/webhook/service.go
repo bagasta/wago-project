@@ -26,6 +26,7 @@ func NewWebhookService() *WebhookService {
 type WebhookPayload struct {
 	SessionID     string        `json:"session_id"`
 	From          string        `json:"from"`
+	SenderLID     string        `json:"sender_lid"`
 	To            string        `json:"to"`
 	Message       string        `json:"message"`
 	Timestamp     time.Time     `json:"timestamp"`
@@ -68,6 +69,7 @@ func (s *WebhookService) SendWebhook(webhookURL string, payload WebhookPayload) 
 		// Add fields
 		_ = writer.WriteField("session_id", payload.SessionID)
 		_ = writer.WriteField("from", payload.From)
+		_ = writer.WriteField("sender_lid", payload.SenderLID)
 		_ = writer.WriteField("to", payload.To)
 		_ = writer.WriteField("message", payload.Message)
 		_ = writer.WriteField("timestamp", payload.Timestamp.Format(time.RFC3339))
