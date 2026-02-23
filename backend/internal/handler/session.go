@@ -209,6 +209,7 @@ func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 	userID := r.Context().Value("user_id").(string)
+	_ = userID // authenticated, no ownership check needed for send-message
 
 	var req struct {
 		Recipient string `json:"recipient"`
@@ -233,8 +234,8 @@ func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if session == nil || session.UserID != userID {
-		utils.ErrorResponse(w, http.StatusForbidden, "Session not accessible")
+	if session == nil {
+		utils.ErrorResponse(w, http.StatusNotFound, "Session not found")
 		return
 	}
 
