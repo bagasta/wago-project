@@ -353,15 +353,38 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			}
 
 			start := time.Now()
-			// Send Typing Indicator
+
+			// Start looping typing indicator — refresh every 5s until webhook responds.
+			// WhatsApp auto-clears "typing" after ~10–15s on most clients, so we re-send
+			// periodically to keep it alive while the AI is thinking.
 			client := cm.GetClient(sessionID)
+			typingDone := make(chan struct{})
 			if client != nil {
-				// We need the JID of the sender (chat)
 				chatJID := v.Info.Chat
-				client.SendChatPresence(context.Background(), chatJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+				go func() {
+					// Send immediately so there's no initial delay
+					client.SendChatPresence(context.Background(), chatJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+					ticker := time.NewTicker(5 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-typingDone:
+							return
+						case <-ticker.C:
+							client.SendChatPresence(context.Background(), chatJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+						}
+					}
+				}()
 			}
 
 			response, err := cm.WebhookService.SendWebhook(session.WebhookURL, payload)
+
+			// Stop typing loop as soon as webhook returns
+			close(typingDone)
+			if client != nil {
+				chatJID := v.Info.Chat
+				client.SendChatPresence(context.Background(), chatJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
+			}
 
 			// Calculate response time
 			duration := time.Since(start).Milliseconds()
@@ -388,12 +411,6 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 					fmt.Printf("Failed to log analytics: %v\n", logErr)
 				}
 			}()
-
-			// Stop Typing Indicator
-			if client != nil {
-				chatJID := v.Info.Chat
-				client.SendChatPresence(context.Background(), chatJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
-			}
 
 			if err != nil {
 				fmt.Printf("Failed to send webhook: %v\n", err)
