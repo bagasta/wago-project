@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -246,4 +248,57 @@ func (h *SessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.SuccessResponse(w, http.StatusOK, nil, "Message sent successfully")
+}
+
+func (h *SessionHandler) SendImage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	err := r.ParseMultipartForm(10 << 20) // 10 MB limit
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Failed to parse multipart form")
+		return
+	}
+
+	recipient := r.FormValue("recipient")
+	if strings.TrimSpace(recipient) == "" {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Recipient is required")
+		return
+	}
+
+	caption := r.FormValue("caption")
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "Image file is required")
+		return
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, file); err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to read image file")
+		return
+	}
+
+	mediaData := buf.Bytes()
+	mimeType := header.Header.Get("Content-Type")
+
+	session, err := h.SessionService.GetSession(id)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if session == nil {
+		utils.ErrorResponse(w, http.StatusNotFound, "Session not found")
+		return
+	}
+
+	err = h.SessionService.SendImage(id, recipient, caption, mediaData, mimeType)
+	if err != nil {
+		utils.ErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.SuccessResponse(w, http.StatusOK, nil, "Image sent successfully")
 }

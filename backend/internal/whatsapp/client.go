@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"wago-backend/internal/config"
@@ -290,6 +291,52 @@ func (cm *ClientManager) SendMessage(sessionID string, recipient string, message
 	// Construct message
 	msg := &waE2E.Message{
 		Conversation: proto.String(message),
+	}
+
+	_, err = client.SendMessage(context.Background(), jid, msg)
+	return err
+}
+
+// SendImage uploads an image to WhatsApp servers and sends it to the recipient
+func (cm *ClientManager) SendImage(sessionID string, recipient string, caption string, mediaData []byte, mimeType string) error {
+	client := cm.GetClient(sessionID)
+	if client == nil {
+		return fmt.Errorf("client not found or not connected")
+	}
+
+	if !client.IsConnected() {
+		return fmt.Errorf("client is not connected")
+	}
+
+	// Parse recipient JID
+	jid, err := normalizeSessionJID(recipient)
+	if err != nil {
+		return fmt.Errorf("invalid recipient number: %v", err)
+	}
+
+	// Detect MIME type if empty
+	if mimeType == "" {
+		mimeType = http.DetectContentType(mediaData)
+	}
+
+	// Upload image to WhatsApp
+	resp, err := client.Upload(context.Background(), mediaData, whatsmeow.MediaImage)
+	if err != nil {
+		return fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	// Construct image message
+	msg := &waE2E.Message{
+		ImageMessage: &waE2E.ImageMessage{
+			Caption:       proto.String(caption),
+			Mimetype:      proto.String(mimeType),
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(mediaData))),
+		},
 	}
 
 	_, err = client.SendMessage(context.Background(), jid, msg)

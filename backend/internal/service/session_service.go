@@ -59,3 +59,7 @@ func (s *SessionService) UpdateSession(session *model.Session) error {
 func (s *SessionService) SendMessage(sessionID, recipient, message string) error {
 	return s.ClientMgr.SendMessage(sessionID, recipient, message)
 }
+
+func (s *SessionService) SendImage(sessionID, recipient, caption string, mediaData []byte, mimeType string) error {
+	return s.ClientMgr.SendImage(sessionID, recipient, caption, mediaData, mimeType)
+}

@@ -116,6 +116,16 @@ curl -X POST http://localhost:8080/api/v1/sessions/{session_id}/send-message \
 ```
 > You can also use header `X-Pin: <YOUR_PIN>` if you prefer keeping `Authorization` for other auth schemes.
 
+### Send Image
+```bash
+curl -X POST http://localhost:8080/api/v1/sessions/{session_id}/send-image \
+  -H "Authorization: Bearer <YOUR_TOKEN>" \
+  -F "recipient=628123456789" \
+  -F "caption=Here is an image" \
+  -F "file=@/path/to/your/image.jpg"
+```
+> Similar to `send-message`, you can also use `Authorization: Pin <YOUR_PIN>` or `X-Pin: <YOUR_PIN>` for auth.
+
 ## Webhook Payload Examples
 
 When a user sends a message to your WhatsApp bot, Wago will send a POST request to your webhook URL with the following payload structure:
