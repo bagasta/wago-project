@@ -224,6 +224,15 @@ func isWebhookForwardableWithoutText(messageType string) bool {
 	}
 }
 
+func groupInfoForWebhook(chat types.JID, isGroup bool) *webhook.GroupInfo {
+	if !isGroup {
+		return nil
+	}
+	return &webhook.GroupInfo{
+		ID: chat.String(),
+	}
+}
+
 func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 	switch v := evt.(type) {
 	case *events.PairSuccess:
@@ -318,6 +327,7 @@ func (cm *ClientManager) handleEvent(sessionID string, evt interface{}) {
 			Message:     v.Message.GetConversation(),
 			Timestamp:   v.Info.Timestamp,
 			IsGroup:     v.Info.IsGroup,
+			GroupInfo:   groupInfoForWebhook(v.Info.Chat, v.Info.IsGroup),
 			PushName:    v.Info.PushName,
 			MessageType: "text", // Simplify for now
 		}

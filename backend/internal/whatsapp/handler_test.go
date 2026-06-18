@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -56,5 +57,21 @@ func TestForwardableWithoutTextIncludesMedia(t *testing.T) {
 
 	if isWebhookForwardableWithoutText("text") {
 		t.Fatal("text should not be forwardable without text")
+	}
+}
+
+func TestGroupInfoForWebhook(t *testing.T) {
+	groupJID := types.NewJID("123456789", types.GroupServer)
+
+	info := groupInfoForWebhook(groupJID, true)
+	if info == nil {
+		t.Fatal("expected group info")
+	}
+	if info.ID != "123456789@g.us" {
+		t.Fatalf("group id = %q, want 123456789@g.us", info.ID)
+	}
+
+	if groupInfoForWebhook(groupJID, false) != nil {
+		t.Fatal("non-group message should not include group info")
 	}
 }
