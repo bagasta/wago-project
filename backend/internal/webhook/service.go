@@ -18,9 +18,24 @@ type WebhookService struct {
 func NewWebhookService() *WebhookService {
 	return &WebhookService{
 		Client: &http.Client{
-			// 3 minutes: covers slow AI workflows (LLM inference, tool calls, etc.)
-			Timeout: 180 * time.Second,
+			// Keep below Cloudflare upstream timeout window to fail fast locally.
+			Timeout: 95 * time.Second,
 		},
+	}
+}
+
+func shouldRetryStatus(statusCode int) bool {
+	if statusCode >= 500 {
+		// Cloudflare 524 means upstream timeout. Immediate retry usually repeats the same failure.
+		return statusCode != 524
+	}
+
+	// Retry selected transient client-side statuses.
+	switch statusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -150,6 +165,9 @@ func (s *WebhookService) SendWebhook(webhookURL string, payload WebhookPayload) 
 		}
 
 		lastErr = fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		if !shouldRetryStatus(resp.StatusCode) {
+			break
+		}
 	}
 
 	return "", fmt.Errorf("webhook failed after %d attempts: %w", maxAttempts, lastErr)
